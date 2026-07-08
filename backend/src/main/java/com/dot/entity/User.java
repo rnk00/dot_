@@ -38,6 +38,12 @@ public class User {
     @Column(name = "provider_id", nullable = false)
     private String providerId;
 
+    @Column(name = "github_token")
+    private String githubToken;
+
+    @Column(name = "github_repo")
+    private String githubRepo;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

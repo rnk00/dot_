@@ -22,9 +22,9 @@ public class RetrospectDto {
         private String problem;
         private String tryContent;
 
-        @Min(1) @Max(10)
+        @Min(1) @Max(5)
         @Builder.Default
-        private Integer score = 5;
+        private Integer score = 3;
 
         private String colorTheme = "default";
     }

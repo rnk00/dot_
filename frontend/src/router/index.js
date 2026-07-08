@@ -1,11 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import MainLayout from '@/components/MainLayout.vue'
 
 const routes = [
-  {
-    path: '/',
-    redirect: '/calendar'
-  },
   {
     path: '/login',
     name: 'Login',
@@ -18,16 +15,16 @@ const routes = [
     component: () => import('@/views/OAuth2CallbackView.vue')
   },
   {
-    path: '/calendar',
-    name: 'Calendar',
-    component: () => import('@/views/CalendarView.vue'),
-    meta: { requiresAuth: true }
-  },
-  {
-    path: '/retrospect/:date',
-    name: 'Retrospect',
-    component: () => import('@/views/RetrospectView.vue'),
-    meta: { requiresAuth: true }
+    path: '/',
+    component: MainLayout,
+    meta: { requiresAuth: true },
+    children: [
+      { path: '', redirect: '/calendar' },
+      { path: 'calendar', name: 'Calendar', component: () => import('@/views/CalendarView.vue') },
+      { path: 'retrospect/:date', name: 'Retrospect', component: () => import('@/views/RetrospectView.vue') },
+      { path: 'analysis', name: 'Analysis', component: () => import('@/views/AnalysisView.vue') },
+      { path: 'settings', name: 'Settings', component: () => import('@/views/SettingsView.vue') },
+    ]
   }
 ]
 
@@ -38,18 +35,11 @@ const router = createRouter({
 
 router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
+  if (!authStore.initialized) await authStore.init()
 
-  if (!authStore.initialized) {
-    await authStore.init()
-  }
-
-  if (to.meta.requiresAuth && !authStore.isLoggedIn) {
-    next('/login')
-  } else if (to.meta.requiresGuest && authStore.isLoggedIn) {
-    next('/calendar')
-  } else {
-    next()
-  }
+  if (to.meta.requiresAuth && !authStore.isLoggedIn) next('/login')
+  else if (to.meta.requiresGuest && authStore.isLoggedIn) next('/calendar')
+  else next()
 })
 
 export default router

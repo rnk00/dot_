@@ -35,6 +35,8 @@ public class AuthController {
         private String nickname;
         private String profileImage;
         private String provider;
+        private String githubRepo;
+        private boolean githubConnected;
 
         public static UserResponse from(User user) {
             return UserResponse.builder()
@@ -43,6 +45,8 @@ public class AuthController {
                     .nickname(user.getNickname())
                     .profileImage(user.getProfileImage())
                     .provider(user.getProvider().name())
+                    .githubRepo(user.getGithubRepo())
+                    .githubConnected(user.getGithubToken() != null && user.getGithubRepo() != null)
                     .build();
         }
     }

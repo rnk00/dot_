@@ -39,7 +39,7 @@ public class Retrospect {
 
     @Column(nullable = false)
     @Builder.Default
-    private Integer score = 5;  // 1~10
+    private Integer score = 3;  // 1~5
 
     @Column(name = "color_theme")
     @Builder.Default

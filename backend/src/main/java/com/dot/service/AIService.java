@@ -1,24 +1,31 @@
 package com.dot.service;
 
-import com.theokanning.openai.completion.chat.ChatCompletionRequest;
-import com.theokanning.openai.completion.chat.ChatMessage;
-import com.theokanning.openai.service.OpenAiService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.WebClient;
 
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class AIService {
 
-    private final OpenAiService openAiService;
+    private final WebClient webClient;
 
-    @Value("${openai.model}")
+    @Value("${google.ai.api-key}")
+    private String apiKey;
+
+    @Value("${google.ai.model}")
     private String model;
+
+    private static final String GOOGLE_AI_BASE_URL =
+            "https://generativelanguage.googleapis.com/v1beta/models/";
 
     /**
      * K, P를 바탕으로 T 자동 제안
@@ -42,7 +49,7 @@ public class AIService {
                 problem != null ? problem : "(없음)"
         );
 
-        return callGPT(prompt);
+        return callGemma(prompt);
     }
 
     /**
@@ -65,25 +72,50 @@ public class AIService {
             default -> "KPT 회고 전체 작성 방법을 간결하게 안내해주세요.";
         };
 
-        return callGPT(prompt);
+        return callGemma(prompt);
     }
 
-    private String callGPT(String prompt) {
+    @SuppressWarnings("unchecked")
+    private String callGemma(String prompt) {
         try {
-            ChatCompletionRequest request = ChatCompletionRequest.builder()
-                    .model(model)
-                    .messages(List.of(new ChatMessage("user", prompt)))
-                    .maxTokens(1000)
-                    .temperature(0.7)
-                    .build();
+            // Native Gemini/Gemma API 형식
+            Map<String, Object> part = Map.of("text", prompt);
+            Map<String, Object> content = Map.of("parts", List.of(part));
+            Map<String, Object> requestBody = Map.of(
+                    "contents", List.of(content),
+                    "generationConfig", Map.of(
+                            "maxOutputTokens", 1000,
+                            "temperature", 0.7
+                    )
+            );
 
-            return openAiService.createChatCompletion(request)
-                    .getChoices()
-                    .get(0)
-                    .getMessage()
-                    .getContent();
+            String url = GOOGLE_AI_BASE_URL + model + ":generateContent";
+
+            // AQ. 로 시작하면 AI Studio OAuth 토큰 → Bearer 헤더
+            // AIza 로 시작하면 Cloud Console API 키 → query param
+            var requestSpec = webClient.post()
+                    .uri(apiKey.startsWith("AQ.") ? url : url + "?key=" + apiKey)
+                    .contentType(MediaType.APPLICATION_JSON);
+
+            if (apiKey.startsWith("AQ.")) {
+                requestSpec = requestSpec.header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey);
+            }
+
+            Map<String, Object> response = requestSpec
+                    .bodyValue(requestBody)
+                    .retrieve()
+                    .bodyToMono(Map.class)
+                    .block();
+
+            if (response == null) throw new RuntimeException("응답 없음");
+
+            List<Map<String, Object>> candidates = (List<Map<String, Object>>) response.get("candidates");
+            Map<String, Object> resContent = (Map<String, Object>) candidates.get(0).get("content");
+            List<Map<String, Object>> parts = (List<Map<String, Object>>) resContent.get("parts");
+            return (String) parts.get(0).get("text");
+
         } catch (Exception e) {
-            log.error("OpenAI API 호출 실패: {}", e.getMessage());
+            log.error("Google AI Studio API 호출 실패: {}", e.getMessage());
             throw new RuntimeException("AI 서비스 오류가 발생했습니다.");
         }
     }
