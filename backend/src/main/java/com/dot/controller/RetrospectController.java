@@ -38,37 +38,58 @@ public class RetrospectController {
         return ResponseEntity.ok(response);
     }
 
-    // ID로 조회
-    @GetMapping("/{id}")
-    public ResponseEntity<RetrospectDto.Response> getById(
+    // 점수 생성/수정 (회고가 없으면 이때 생성됨)
+    @PutMapping("/date/{date}/score")
+    public ResponseEntity<RetrospectDto.Response> upsertScore(
             @AuthenticationPrincipal Long userId,
-            @PathVariable Long id) {
-        return ResponseEntity.ok(retrospectService.getById(userId, id));
+            @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @Valid @RequestBody RetrospectDto.ScoreRequest request) {
+        return ResponseEntity.ok(retrospectService.upsertScore(userId, date, request));
     }
 
-    // 생성
-    @PostMapping
-    public ResponseEntity<RetrospectDto.Response> create(
-            @AuthenticationPrincipal Long userId,
-            @Valid @RequestBody RetrospectDto.Request request) {
-        return ResponseEntity.ok(retrospectService.create(userId, request));
-    }
-
-    // 수정
-    @PutMapping("/{id}")
-    public ResponseEntity<RetrospectDto.Response> update(
-            @AuthenticationPrincipal Long userId,
-            @PathVariable Long id,
-            @Valid @RequestBody RetrospectDto.Request request) {
-        return ResponseEntity.ok(retrospectService.update(userId, id, request));
-    }
-
-    // 삭제
+    // 삭제 (기간 제한 없음)
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(
             @AuthenticationPrincipal Long userId,
             @PathVariable Long id) {
         retrospectService.delete(userId, id);
         return ResponseEntity.noContent().build();
+    }
+
+    // KPT 항목 추가
+    @PostMapping("/date/{date}/kpt-items")
+    public ResponseEntity<RetrospectDto.Response> addItem(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @Valid @RequestBody RetrospectDto.ItemCreateRequest request) {
+        return ResponseEntity.ok(retrospectService.addItem(userId, date, request));
+    }
+
+    // KPT 항목 수정
+    @PutMapping("/date/{date}/kpt-items/{itemId}")
+    public ResponseEntity<RetrospectDto.Response> updateItem(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @PathVariable Long itemId,
+            @Valid @RequestBody RetrospectDto.ItemUpdateRequest request) {
+        return ResponseEntity.ok(retrospectService.updateItem(userId, date, itemId, request));
+    }
+
+    // KPT 항목 삭제
+    @DeleteMapping("/date/{date}/kpt-items/{itemId}")
+    public ResponseEntity<RetrospectDto.Response> deleteItem(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @PathVariable Long itemId) {
+        return ResponseEntity.ok(retrospectService.deleteItem(userId, date, itemId));
+    }
+
+    // KPT 항목 순서 변경
+    @PutMapping("/date/{date}/kpt-items/order")
+    public ResponseEntity<RetrospectDto.Response> reorderItems(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @Valid @RequestBody RetrospectDto.ItemOrderRequest request) {
+        return ResponseEntity.ok(retrospectService.reorderItems(userId, date, request));
     }
 }

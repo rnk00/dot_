@@ -22,7 +22,7 @@
             v-for="day in daysInMonth"
             :key="day"
             class="day-cell"
-            :class="{ today: isToday(day), 'has-data': getDayData(day) }"
+            :class="{ today: isToday(day), 'has-data': getDayData(day), future: isFutureDay(day) }"
             :style="getCellStyle(day)"
             @click="goToDate(day)"
           >
@@ -108,11 +108,11 @@ const aiLoading = ref(false)
 const weekDays = ['일', '월', '화', '수', '목', '금', '토']
 
 const scoreColors = {
-  1: '#fca5a5',
-  2: '#fdba74',
-  3: '#fde68a',
-  4: '#86efac',
-  5: '#34d399'
+  1: '#FFADAD',
+  2: '#FFD6A5',
+  3: '#FDFFB6',
+  4: '#CAFFBF',
+  5: '#8CD98C'
 }
 
 const daysInMonth = computed(() =>
@@ -162,7 +162,14 @@ function isToday(day) {
     currentYear.value === today.getFullYear()
 }
 
+function isFutureDay(day) {
+  const cellDate = new Date(currentYear.value, currentMonth.value - 1, day)
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  return cellDate > todayStart
+}
+
 function goToDate(day) {
+  if (isFutureDay(day)) return
   const date = `${currentYear.value}-${String(currentMonth.value).padStart(2,'0')}-${String(day).padStart(2,'0')}`
   router.push(`/retrospect/${date}`)
 }
@@ -299,6 +306,9 @@ onMounted(loadCalendar)
 }
 
 .day-cell.empty { background: transparent; cursor: default; }
+
+.day-cell.future { cursor: not-allowed; opacity: 0.4; }
+.day-cell.future:hover { transform: none; box-shadow: none; border-color: transparent; }
 
 .day-cell.today {
   border-color: #6366f1;

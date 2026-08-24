@@ -43,7 +43,7 @@ const isError = computed(() => route.query.error === 'true')
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #f1f5f9;
   padding: 20px;
 }
 

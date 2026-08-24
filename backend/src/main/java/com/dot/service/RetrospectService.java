@@ -1,13 +1,17 @@
 package com.dot.service;
 
 import com.dot.dto.RetrospectDto;
+import com.dot.entity.KptItem;
 import com.dot.entity.Retrospect;
 import com.dot.entity.User;
+import com.dot.repository.KptItemRepository;
 import com.dot.repository.RetrospectRepository;
 import com.dot.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -17,8 +21,12 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class RetrospectService {
 
+    private static final int READONLY_DAYS = 14;
+    private static final int MAX_ITEMS_PER_TYPE = 20;
+
     private final RetrospectRepository retrospectRepository;
     private final UserRepository userRepository;
+    private final KptItemRepository kptItemRepository;
 
     // 월별 캘린더 데이터 (날짜 + 점수만)
     public List<RetrospectDto.CalendarItem> getCalendarData(Long userId, int year, int month) {
@@ -36,73 +44,171 @@ public class RetrospectService {
                 .toList();
     }
 
-    // 특정 날짜 회고 조회
+    // 특정 날짜 회고 조회 (없으면 null → 컨트롤러가 404)
     public RetrospectDto.Response getByDate(Long userId, LocalDate date) {
+        validateNotFuture(date);
         return retrospectRepository.findByUserIdAndDate(userId, date)
                 .map(RetrospectDto.Response::from)
                 .orElse(null);
     }
 
-    // 특정 ID 회고 조회
-    public RetrospectDto.Response getById(Long userId, Long id) {
-        Retrospect retrospect = retrospectRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("회고를 찾을 수 없습니다."));
-        validateOwner(retrospect, userId);
-        return RetrospectDto.Response.from(retrospect);
-    }
-
-    // 생성
+    // 점수 생성/수정 (회고가 없으면 이 시점에 생성)
     @Transactional
-    public RetrospectDto.Response create(Long userId, RetrospectDto.Request request) {
-        // 같은 날짜에 이미 있으면 예외
-        if (retrospectRepository.findByUserIdAndDate(userId, request.getDate()).isPresent()) {
-            throw new RuntimeException("해당 날짜에 이미 회고가 있습니다.");
-        }
+    public RetrospectDto.Response upsertScore(Long userId, LocalDate date, RetrospectDto.ScoreRequest request) {
+        validateNotFuture(date);
+        validateWritable(date);
 
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+        Retrospect retrospect = retrospectRepository.findByUserIdAndDate(userId, date)
+                .orElseGet(() -> createBlank(userId, date));
 
-        Retrospect retrospect = Retrospect.builder()
-                .user(user)
-                .date(request.getDate())
-                .keep(request.getKeep())
-                .problem(request.getProblem())
-                .tryContent(request.getTryContent())
-                .score(request.getScore() != null ? request.getScore() : 5)
-                .colorTheme(request.getColorTheme() != null ? request.getColorTheme() : "default")
-                .build();
-
+        retrospect.setScore(request.getScore());
+        retrospect.setIsGithubSynced(false);
         return RetrospectDto.Response.from(retrospectRepository.save(retrospect));
     }
 
-    // 수정
-    @Transactional
-    public RetrospectDto.Response update(Long userId, Long id, RetrospectDto.Request request) {
-        Retrospect retrospect = retrospectRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("회고를 찾을 수 없습니다."));
-        validateOwner(retrospect, userId);
-
-        retrospect.setKeep(request.getKeep());
-        retrospect.setProblem(request.getProblem());
-        retrospect.setTryContent(request.getTryContent());
-        if (request.getScore() != null) retrospect.setScore(request.getScore());
-        if (request.getColorTheme() != null) retrospect.setColorTheme(request.getColorTheme());
-
-        return RetrospectDto.Response.from(retrospectRepository.save(retrospect));
-    }
-
-    // 삭제
+    // 삭제 — 기간 제한 없음
     @Transactional
     public void delete(Long userId, Long id) {
-        Retrospect retrospect = retrospectRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("회고를 찾을 수 없습니다."));
-        validateOwner(retrospect, userId);
+        Retrospect retrospect = getOwned(id, userId);
         retrospectRepository.delete(retrospect);
     }
 
-    private void validateOwner(Retrospect retrospect, Long userId) {
+    // KPT 항목 추가
+    @Transactional
+    public RetrospectDto.Response addItem(Long userId, LocalDate date, RetrospectDto.ItemCreateRequest request) {
+        validateNotFuture(date);
+        validateWritable(date);
+        if (request.getContent() == null || request.getContent().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "내용을 입력해주세요.");
+        }
+
+        Retrospect retrospect = retrospectRepository.findByUserIdAndDate(userId, date)
+                .orElseGet(() -> createBlank(userId, date));
+
+        long count = kptItemRepository.countByRetrospectIdAndType(retrospect.getId(), request.getType());
+        if (count >= MAX_ITEMS_PER_TYPE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "최대 20개까지 작성 가능합니다.");
+        }
+
+        KptItem item = KptItem.builder()
+                .retrospect(retrospect)
+                .type(request.getType())
+                .content(request.getContent().trim())
+                .orderIndex((int) count)
+                .build();
+        kptItemRepository.save(item);
+
+        retrospect.setIsGithubSynced(false);
+        retrospectRepository.save(retrospect);
+
+        return RetrospectDto.Response.from(reload(retrospect.getId()));
+    }
+
+    // KPT 항목 수정
+    @Transactional
+    public RetrospectDto.Response updateItem(Long userId, LocalDate date, Long itemId, RetrospectDto.ItemUpdateRequest request) {
+        validateNotFuture(date);
+        validateWritable(date);
+        if (request.getContent() == null || request.getContent().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "내용을 입력해주세요.");
+        }
+
+        KptItem item = getOwnedItem(userId, date, itemId);
+        item.setContent(request.getContent().trim());
+        kptItemRepository.save(item);
+
+        item.getRetrospect().setIsGithubSynced(false);
+        retrospectRepository.save(item.getRetrospect());
+
+        return RetrospectDto.Response.from(reload(item.getRetrospect().getId()));
+    }
+
+    // KPT 항목 삭제
+    @Transactional
+    public RetrospectDto.Response deleteItem(Long userId, LocalDate date, Long itemId) {
+        validateNotFuture(date);
+        validateWritable(date);
+
+        KptItem item = getOwnedItem(userId, date, itemId);
+        Long retrospectId = item.getRetrospect().getId();
+        kptItemRepository.delete(item);
+
+        Retrospect retrospect = reload(retrospectId);
+        retrospect.setIsGithubSynced(false);
+        retrospectRepository.save(retrospect);
+
+        return RetrospectDto.Response.from(reload(retrospectId));
+    }
+
+    // KPT 항목 순서 변경
+    @Transactional
+    public RetrospectDto.Response reorderItems(Long userId, LocalDate date, RetrospectDto.ItemOrderRequest request) {
+        validateNotFuture(date);
+        validateWritable(date);
+
+        Retrospect retrospect = retrospectRepository.findByUserIdAndDate(userId, date)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "회고를 찾을 수 없습니다."));
+
+        List<KptItem> items = kptItemRepository.findByRetrospectIdAndTypeOrderByOrderIndexAsc(retrospect.getId(), request.getType());
+        List<Long> orderedIds = request.getOrderedIds();
+
+        for (KptItem item : items) {
+            int newIndex = orderedIds.indexOf(item.getId());
+            if (newIndex < 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "순서 목록이 유효하지 않습니다.");
+            }
+            item.setOrderIndex(newIndex);
+        }
+        kptItemRepository.saveAll(items);
+
+        return RetrospectDto.Response.from(reload(retrospect.getId()));
+    }
+
+    private Retrospect createBlank(Long userId, LocalDate date) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다."));
+        Retrospect retrospect = Retrospect.builder()
+                .user(user)
+                .date(date)
+                .score(3)
+                .build();
+        return retrospectRepository.save(retrospect);
+    }
+
+    private Retrospect reload(Long id) {
+        return retrospectRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "회고를 찾을 수 없습니다."));
+    }
+
+    private Retrospect getOwned(Long id, Long userId) {
+        Retrospect retrospect = retrospectRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "회고를 찾을 수 없습니다."));
         if (!retrospect.getUser().getId().equals(userId)) {
-            throw new RuntimeException("권한이 없습니다.");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "권한이 없습니다.");
+        }
+        return retrospect;
+    }
+
+    private KptItem getOwnedItem(Long userId, LocalDate date, Long itemId) {
+        Retrospect retrospect = retrospectRepository.findByUserIdAndDate(userId, date)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "회고를 찾을 수 없습니다."));
+        KptItem item = kptItemRepository.findById(itemId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "항목을 찾을 수 없습니다."));
+        if (!item.getRetrospect().getId().equals(retrospect.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "권한이 없습니다.");
+        }
+        return item;
+    }
+
+    private void validateNotFuture(LocalDate date) {
+        if (date.isAfter(LocalDate.now())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "미래 날짜에는 접근할 수 없습니다.");
+        }
+    }
+
+    private void validateWritable(LocalDate date) {
+        if (date.isBefore(LocalDate.now().minusDays(READONLY_DAYS))) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "작성 후 14일이 지나 읽기 전용입니다.");
         }
     }
 }

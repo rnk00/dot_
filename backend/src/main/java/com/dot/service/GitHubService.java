@@ -1,7 +1,9 @@
 package com.dot.service;
 
+import com.dot.entity.KptItem;
 import com.dot.entity.Retrospect;
 import com.dot.entity.User;
+import com.dot.repository.KptItemRepository;
 import com.dot.repository.RetrospectRepository;
 import com.dot.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +16,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -24,6 +27,7 @@ public class GitHubService {
     private final WebClient webClient;
     private final UserRepository userRepository;
     private final RetrospectRepository retrospectRepository;
+    private final KptItemRepository kptItemRepository;
 
     public void updateGitHubSettings(Long userId, String token, String repo) {
         User user = userRepository.findById(userId)
@@ -61,6 +65,9 @@ public class GitHubService {
         String sha = getFileSha(user.getGithubToken(), owner, repo, filePath);
 
         pushFile(user.getGithubToken(), owner, repo, filePath, content, sha, retro.getDate().toString());
+
+        retro.setIsGithubSynced(true);
+        retrospectRepository.save(retro);
     }
 
     @SuppressWarnings("unchecked")
@@ -147,9 +154,19 @@ public class GitHubService {
                 """,
                 retro.getDate(),
                 stars, retro.getScore(),
-                retro.getKeep() != null ? retro.getKeep() : "(없음)",
-                retro.getProblem() != null ? retro.getProblem() : "(없음)",
-                retro.getTryContent() != null ? retro.getTryContent() : "(없음)"
+                renderItems(retro.getId(), KptItem.Type.KEEP),
+                renderItems(retro.getId(), KptItem.Type.PROBLEM),
+                renderItems(retro.getId(), KptItem.Type.TRY)
         );
+    }
+
+    private String renderItems(Long retrospectId, KptItem.Type type) {
+        List<KptItem> items = kptItemRepository.findByRetrospectIdAndTypeOrderByOrderIndexAsc(retrospectId, type);
+        if (items.isEmpty()) return "(없음)";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < items.size(); i++) {
+            sb.append(i + 1).append(". ").append(items.get(i).getContent()).append("\n");
+        }
+        return sb.toString().stripTrailing();
     }
 }

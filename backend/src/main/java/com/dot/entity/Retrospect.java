@@ -7,6 +7,8 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "retrospects")
@@ -28,14 +30,9 @@ public class Retrospect {
     @Column(nullable = false)
     private LocalDate date;
 
-    @Column(columnDefinition = "TEXT")
-    private String keep;
-
-    @Column(columnDefinition = "TEXT")
-    private String problem;
-
-    @Column(columnDefinition = "TEXT")
-    private String tryContent;  // 'try'는 예약어라 tryContent로
+    @OneToMany(mappedBy = "retrospect", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<KptItem> items = new ArrayList<>();
 
     @Column(nullable = false)
     @Builder.Default
@@ -44,6 +41,10 @@ public class Retrospect {
     @Column(name = "color_theme")
     @Builder.Default
     private String colorTheme = "default";
+
+    @Column(name = "is_github_synced", nullable = false)
+    @Builder.Default
+    private Boolean isGithubSynced = false;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
