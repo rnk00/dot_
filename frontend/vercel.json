@@ -1,7 +1,7 @@
 {
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://REPLACE-WITH-RENDER-URL.onrender.com/api/:path*" },
-    { "source": "/oauth2/authorization/:path*", "destination": "https://REPLACE-WITH-RENDER-URL.onrender.com/oauth2/authorization/:path*" },
-    { "source": "/login/oauth2/:path*", "destination": "https://REPLACE-WITH-RENDER-URL.onrender.com/login/oauth2/:path*" }
+    { "source": "/api/:path*", "destination": "https://dot-k65z.onrender.com/api/:path*" },
+    { "source": "/oauth2/authorization/:path*", "destination": "https://dot-k65z.onrender.com/oauth2/authorization/:path*" },
+    { "source": "/login/oauth2/:path*", "destination": "https://dot-k65z.onrender.com/login/oauth2/:path*" }
   ]
 }
