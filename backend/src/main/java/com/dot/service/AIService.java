@@ -7,6 +7,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.List;
 import java.util.Map;
@@ -89,19 +90,13 @@ public class AIService {
                     )
             );
 
+            // 공식 문서 기준: x-goog-api-key 헤더 사용
             String url = GOOGLE_AI_BASE_URL + model + ":generateContent";
 
-            // AQ. 로 시작하면 AI Studio OAuth 토큰 → Bearer 헤더
-            // AIza 로 시작하면 Cloud Console API 키 → query param
-            var requestSpec = webClient.post()
-                    .uri(apiKey.startsWith("AQ.") ? url : url + "?key=" + apiKey)
-                    .contentType(MediaType.APPLICATION_JSON);
-
-            if (apiKey.startsWith("AQ.")) {
-                requestSpec = requestSpec.header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey);
-            }
-
-            Map<String, Object> response = requestSpec
+            Map<String, Object> response = webClient.post()
+                    .uri(url)
+                    .header("x-goog-api-key", apiKey)
+                    .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(requestBody)
                     .retrieve()
                     .bodyToMono(Map.class)
@@ -114,6 +109,9 @@ public class AIService {
             List<Map<String, Object>> parts = (List<Map<String, Object>>) resContent.get("parts");
             return (String) parts.get(0).get("text");
 
+        } catch (WebClientResponseException e) {
+            log.error("Google AI Studio API 호출 실패 [{}]: {}", e.getStatusCode(), e.getResponseBodyAsString());
+            throw new RuntimeException("AI 서비스 오류가 발생했습니다.");
         } catch (Exception e) {
             log.error("Google AI Studio API 호출 실패: {}", e.getMessage());
             throw new RuntimeException("AI 서비스 오류가 발생했습니다.");
