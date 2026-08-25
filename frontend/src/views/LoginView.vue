@@ -2,7 +2,7 @@
   <div class="login-page">
     <div class="login-card">
       <div class="brand">
-        <div class="brand-icon">📝</div>
+        <Icon name="document" :size="28" class="brand-icon" />
         <h1 class="brand-name">회고 노트</h1>
         <p class="brand-desc">매일의 성장을 기록하세요</p>
       </div>
@@ -32,6 +32,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import Icon from '@/components/Icon.vue'
 
 const route = useRoute()
 const isError = computed(() => route.query.error === 'true')
@@ -62,7 +63,7 @@ const isError = computed(() => route.query.error === 'true')
 }
 
 .brand-icon {
-  font-size: 2.5rem;
+  color: #6366f1;
   margin-bottom: 12px;
 }
 

@@ -41,7 +41,7 @@
 
         <!-- 오늘 회고 작성 버튼 -->
         <button class="btn-today" @click="goToDate(today.getDate())">
-          ✏️ 오늘 회고 작성
+          오늘 회고 작성
         </button>
       </section>
 
@@ -49,7 +49,7 @@
       <aside class="sidebar">
         <!-- 월 통계 -->
         <div class="sidebar-card">
-          <h3 class="card-title">📊 이번 달 통계</h3>
+          <h3 class="card-title"><Icon name="bar-chart" /> 이번 달 통계</h3>
           <div class="stats-row">
             <div class="stat">
               <div class="stat-value">{{ stats.count }}</div>
@@ -68,7 +68,7 @@
 
         <!-- 최근 회고 -->
         <div class="sidebar-card">
-          <h3 class="card-title">📝 최근 회고</h3>
+          <h3 class="card-title"><Icon name="document" /> 최근 회고</h3>
           <div v-if="recentRetros.length === 0" class="empty-msg">아직 작성된 회고가 없어요</div>
           <div v-for="r in recentRetros" :key="r.id" class="recent-item" @click="$router.push(`/retrospect/${r.date}`)">
             <div class="recent-date">{{ formatDate(r.date) }}</div>
@@ -78,7 +78,7 @@
 
         <!-- AI 인사이트 -->
         <div class="sidebar-card ai-card">
-          <h3 class="card-title">✨ AI 인사이트</h3>
+          <h3 class="card-title"><Icon name="sparkle" /> AI 인사이트</h3>
           <p v-if="!aiInsight && !aiLoading" class="empty-msg">회고를 3개 이상 작성하면 AI 인사이트를 받을 수 있어요</p>
           <p v-if="aiLoading" class="empty-msg">분석 중...</p>
           <p v-if="aiInsight" class="ai-text">{{ aiInsight }}</p>
@@ -96,6 +96,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { retrospectApi } from '@/api/retrospect'
 import { aiApi } from '@/api/ai'
+import Icon from '@/components/Icon.vue'
 
 const router = useRouter()
 const today = new Date()
@@ -364,6 +365,9 @@ onMounted(loadCalendar)
 }
 
 .card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 0.9rem;
   font-weight: 700;
   color: #1e293b;

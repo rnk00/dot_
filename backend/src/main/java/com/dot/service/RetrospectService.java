@@ -8,6 +8,7 @@ import com.dot.repository.KptItemRepository;
 import com.dot.repository.RetrospectRepository;
 import com.dot.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -164,15 +165,22 @@ public class RetrospectService {
         return RetrospectDto.Response.from(reload(retrospect.getId()));
     }
 
+    // 동시 요청이 겹쳐서 같은 유저+날짜로 동시에 생성을 시도할 수 있음 —
+    // DB 유니크 제약(user_id, date)에 걸리면 그새 다른 요청이 만든 걸로 다시 조회해서 반환
     private Retrospect createBlank(Long userId, LocalDate date) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다."));
-        Retrospect retrospect = Retrospect.builder()
-                .user(user)
-                .date(date)
-                .score(3)
-                .build();
-        return retrospectRepository.save(retrospect);
+        try {
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다."));
+            Retrospect retrospect = Retrospect.builder()
+                    .user(user)
+                    .date(date)
+                    .score(3)
+                    .build();
+            return retrospectRepository.saveAndFlush(retrospect);
+        } catch (DataIntegrityViolationException e) {
+            return retrospectRepository.findByUserIdAndDate(userId, date)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "회고 생성 중 오류가 발생했습니다."));
+        }
     }
 
     private Retrospect reload(Long id) {

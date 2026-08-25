@@ -16,17 +16,17 @@
       <!-- 통계 카드 -->
       <div class="stat-cards">
         <div class="stat-card">
-          <div class="stat-icon">📝</div>
+          <Icon name="document" class="stat-icon" :size="22" />
           <div class="stat-val">{{ overview.count }}</div>
           <div class="stat-label">총 작성 수</div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon">⭐</div>
+          <Icon name="star" class="stat-icon" :size="22" />
           <div class="stat-val">{{ overview.avgScore }}</div>
           <div class="stat-label">평균 점수</div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon">🔥</div>
+          <Icon name="flame" class="stat-icon" :size="22" />
           <div class="stat-val">{{ overview.streak }}</div>
           <div class="stat-label">연속 일수</div>
         </div>
@@ -48,7 +48,7 @@
 
       <!-- AI 인사이트 -->
       <div class="card insight-card">
-        <div class="card-title">✨ AI 인사이트</div>
+        <div class="card-title"><Icon name="sparkle" /> AI 인사이트</div>
         <p v-if="!aiInsight && !aiLoading && allRetros.length < 3" class="empty-text">회고를 3개 이상 작성하면 AI 인사이트를 받을 수 있어요.</p>
         <p v-if="aiLoading" class="empty-text">분석 중...</p>
         <p v-if="aiInsight" class="insight-text">{{ aiInsight }}</p>
@@ -58,7 +58,7 @@
       <!-- 상위 Keep / Problem -->
       <div class="two-col">
         <div class="card">
-          <div class="card-title keep-title">✅ 상위 Keep</div>
+          <div class="card-title keep-title"><Icon name="check-circle" /> 상위 Keep</div>
           <div v-if="topKeeps.length === 0" class="empty-text">데이터 없음</div>
           <div v-for="(k, i) in topKeeps" :key="i" class="keyword-item">
             <span class="keyword-rank">{{ i+1 }}</span>
@@ -66,7 +66,7 @@
           </div>
         </div>
         <div class="card">
-          <div class="card-title problem-title">⚠️ 상위 Problem</div>
+          <div class="card-title problem-title"><Icon name="alert-triangle" /> 상위 Problem</div>
           <div v-if="topProblems.length === 0" class="empty-text">데이터 없음</div>
           <div v-for="(p, i) in topProblems" :key="i" class="keyword-item">
             <span class="keyword-rank problem-rank">{{ i+1 }}</span>
@@ -79,7 +79,7 @@
     <!-- 패턴 탭 -->
     <div v-if="activeTab === 'pattern'" class="tab-content">
       <div class="card">
-        <div class="card-title">🔁 반복 키워드</div>
+        <div class="card-title"><Icon name="repeat" /> 반복 키워드</div>
         <p class="card-desc">Problem에서 자주 언급된 단어예요.</p>
         <div v-if="keywords.length === 0" class="empty-text">회고를 더 작성하면 패턴이 나타나요.</div>
         <div v-for="kw in keywords" :key="kw.word" class="kw-row">
@@ -89,8 +89,7 @@
       </div>
 
       <div v-if="hasRepeatProblem" class="card warn-card">
-        <div class="warn-icon">🚨</div>
-        <div class="warn-title">반복 문제 감지</div>
+        <div class="warn-title"><Icon name="alert-triangle" /> 반복 문제 감지</div>
         <p class="warn-desc">같은 문제가 반복되고 있어요. Try를 통해 적극적으로 해결해보세요!</p>
       </div>
     </div>
@@ -98,7 +97,7 @@
     <!-- 추천 탭 -->
     <div v-if="activeTab === 'recommend'" class="tab-content">
       <div class="card">
-        <div class="card-title">🎯 AI 추천 다음 단계</div>
+        <div class="card-title"><Icon name="target" /> AI 추천 다음 단계</div>
         <p v-if="!recommendations && !recLoading && allRetros.length < 3" class="empty-text">회고를 3개 이상 작성하면 추천을 받을 수 있어요.</p>
         <p v-if="recLoading" class="empty-text">추천 생성 중...</p>
         <div v-if="recommendations" class="rec-text">{{ recommendations }}</div>
@@ -106,7 +105,7 @@
       </div>
 
       <div class="card tip-card">
-        <div class="card-title">💡 성장 팁</div>
+        <div class="card-title"><Icon name="lightbulb" /> 성장 팁</div>
         <div v-for="tip in growthTips" :key="tip" class="tip-item">• {{ tip }}</div>
       </div>
     </div>
@@ -117,6 +116,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { retrospectApi } from '@/api/retrospect'
 import { aiApi } from '@/api/ai'
+import Icon from '@/components/Icon.vue'
 
 const activeTab = ref('overview')
 const tabs = [
@@ -289,7 +289,7 @@ onMounted(loadAll)
   text-align: center;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
-.stat-icon { font-size: 1.5rem; margin-bottom: 6px; }
+.stat-icon { color: #6366f1; margin-bottom: 6px; }
 .stat-val { font-size: 1.5rem; font-weight: 800; color: #6366f1; }
 .stat-label { font-size: 0.7rem; color: #94a3b8; margin-top: 2px; }
 
@@ -300,6 +300,9 @@ onMounted(loadAll)
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
 .card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 0.9rem;
   font-weight: 700;
   color: #1e293b;
@@ -414,7 +417,7 @@ onMounted(loadAll)
   gap: 6px;
 }
 .warn-icon { font-size: 2rem; }
-.warn-title { font-size: 1rem; font-weight: 700; color: #ef4444; }
+.warn-title { display: flex; align-items: center; gap: 6px; font-size: 1rem; font-weight: 700; color: #ef4444; }
 .warn-desc { font-size: 0.85rem; color: #64748b; }
 
 .rec-text { font-size: 0.875rem; line-height: 1.8; color: #374151; white-space: pre-wrap; }

@@ -26,7 +26,6 @@
           >
             {{ n }}
           </button>
-          <span class="score-emoji">{{ scoreEmoji[score] }}</span>
         </div>
       </div>
 
@@ -79,7 +78,7 @@
         <!-- AI Try 추천 -->
         <template v-if="t.key === 'tryItems' && !isReadOnly">
           <button class="btn-ai" @click="suggestTry" :disabled="aiLoading">
-            {{ aiLoading ? '생성 중...' : '✨ AI 추천 받기' }}
+            <Icon name="sparkle" :size="15" /> {{ aiLoading ? '생성 중...' : 'AI 추천 받기' }}
           </button>
           <div v-if="aiSuggestion" class="ai-box">
             <p class="ai-box-label">AI 추천</p>
@@ -100,7 +99,7 @@
             @click="pushToGithub"
             :disabled="githubLoading || saveState !== 'saved'"
           >
-            {{ githubLoading ? '업로드 중...' : (isGithubSynced ? 'GitHub 최신' : '🐙 GitHub 업로드') }}
+            <Icon v-if="!isGithubSynced" name="upload" :size="15" /> {{ githubLoading ? '업로드 중...' : (isGithubSynced ? 'GitHub 최신' : 'GitHub 업로드') }}
           </button>
           <button v-else class="btn-github" @click="githubNeedSetup = true">GitHub 연동 필요</button>
         </template>
@@ -135,6 +134,7 @@ import { retrospectApi } from '@/api/retrospect'
 import { aiApi } from '@/api/ai'
 import { githubApi } from '@/api/github'
 import { useAuthStore } from '@/stores/auth'
+import Icon from '@/components/Icon.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -147,7 +147,6 @@ const TYPES = [
 ]
 
 const scoreColors = { 1: '#FFADAD', 2: '#FFD6A5', 3: '#FDFFB6', 4: '#CAFFBF', 5: '#8CD98C' }
-const scoreEmoji = { 1: '😞', 2: '😕', 3: '😐', 4: '🙂', 5: '😄' }
 
 const retrospectId = ref(null)
 const isGithubSynced = ref(false)
@@ -349,7 +348,7 @@ async function pushToGithub() {
   try {
     await githubApi.push(retrospectId.value)
     isGithubSynced.value = true
-    alert('GitHub에 성공적으로 업로드되었습니다! 🎉')
+    alert('GitHub에 성공적으로 업로드되었습니다.')
   } catch (e) {
     const msg = e.response?.data?.message || 'GitHub 업로드에 실패했습니다.'
     alert(msg)
@@ -543,6 +542,10 @@ onMounted(loadRetro)
   margin-top: 12px;
   width: 100%;
   padding: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
   color: #fff;
   border: none;
@@ -600,6 +603,9 @@ onMounted(loadRetro)
 
 .btn-github {
   padding: 15px 18px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   background: #24292e;
   color: #fff;
   border: none;

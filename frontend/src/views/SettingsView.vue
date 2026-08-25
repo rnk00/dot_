@@ -62,7 +62,7 @@
         </div>
 
         <div v-if="github.connected" class="connected-banner">
-          ✅ 연결됨 — {{ github.repo }}
+          <span class="connected-label"><Icon name="check-circle" :size="15" /> 연결됨 — {{ github.repo }}</span>
           <button class="btn-disconnect" @click="disconnectGithub">해제</button>
         </div>
 
@@ -101,7 +101,7 @@
       <!-- 계정 -->
       <div class="section-title">계정</div>
       <div class="card danger-card">
-        <div class="danger-title">⚠️ 계정 삭제</div>
+        <div class="danger-title"><Icon name="alert-triangle" :size="15" /> 계정 삭제</div>
         <p class="danger-desc">계정을 삭제하면 모든 회고 데이터가 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다.</p>
         <button class="btn-danger" @click="deleteAccount">계정 삭제</button>
       </div>
@@ -119,6 +119,7 @@ import { reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { githubApi } from '@/api/github'
+import Icon from '@/components/Icon.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -336,7 +337,8 @@ code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 0.8
 
 /* 위험 */
 .danger-card { border: 1.5px solid #fecaca; background: #fff5f5; }
-.danger-title { font-size: 0.9rem; font-weight: 700; color: #ef4444; margin-bottom: 8px; }
+.danger-title { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; font-weight: 700; color: #ef4444; margin-bottom: 8px; }
+.connected-label { display: flex; align-items: center; gap: 6px; }
 .danger-desc { font-size: 0.825rem; color: #64748b; line-height: 1.5; margin-bottom: 14px; }
 .btn-danger {
   padding: 9px 18px;
