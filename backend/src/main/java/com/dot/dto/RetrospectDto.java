@@ -49,7 +49,10 @@ public class RetrospectDto {
         private LocalDateTime createdAt;
         private LocalDateTime updatedAt;
 
-        public static Response from(Retrospect r) {
+        // items는 항상 호출부에서 DB로 새로 조회한 최신 목록을 넘겨야 함 —
+        // r.getItems()(영속성 컨텍스트에 이미 로드된 컬렉션)를 쓰면 같은 트랜잭션 안에서
+        // 방금 삭제/추가한 항목이 반영 안 된 상태로 응답에 섞여 나갈 수 있음
+        public static Response from(Retrospect r, List<KptItem> items) {
             Comparator<KptItem> byOrder = Comparator.comparing(KptItem::getOrderIndex);
             return Response.builder()
                     .id(r.getId())
@@ -57,13 +60,13 @@ public class RetrospectDto {
                     .score(r.getScore())
                     .colorTheme(r.getColorTheme())
                     .isGithubSynced(r.getIsGithubSynced())
-                    .keep(r.getItems().stream()
+                    .keep(items.stream()
                             .filter(i -> i.getType() == KptItem.Type.KEEP)
                             .sorted(byOrder).map(ItemResponse::from).toList())
-                    .problem(r.getItems().stream()
+                    .problem(items.stream()
                             .filter(i -> i.getType() == KptItem.Type.PROBLEM)
                             .sorted(byOrder).map(ItemResponse::from).toList())
-                    .tryItems(r.getItems().stream()
+                    .tryItems(items.stream()
                             .filter(i -> i.getType() == KptItem.Type.TRY)
                             .sorted(byOrder).map(ItemResponse::from).toList())
                     .createdAt(r.getCreatedAt())

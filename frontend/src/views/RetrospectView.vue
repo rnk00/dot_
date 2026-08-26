@@ -128,7 +128,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { retrospectApi } from '@/api/retrospect'
 import { aiApi } from '@/api/ai'
@@ -211,14 +211,29 @@ async function trackSave(promise) {
 
 function applyResponse(data) {
   retrospectId.value = data.id
-  isGithubSynced.value = data.isGithubSynced
-  score.value = data.score
-  lists.keep = data.keep
-  lists.problem = data.problem
-  lists.tryItems = data.tryItems
+  isGithubSynced.value = !!data.isGithubSynced
+  score.value = data.score ?? 3
+  lists.keep = data.keep || []
+  lists.problem = data.problem || []
+  lists.tryItems = data.tryItems || []
+}
+
+function resetState() {
+  retrospectId.value = null
+  isGithubSynced.value = false
+  score.value = 3
+  lists.keep = []
+  lists.problem = []
+  lists.tryItems = []
+  draft.keep = null
+  draft.problem = null
+  draft.tryItems = null
+  aiSuggestion.value = ''
+  githubNeedSetup.value = false
 }
 
 async function loadRetro() {
+  resetState()
   if (isFuture.value) return
   try {
     const data = await retrospectApi.getByDate(route.params.date)
@@ -286,12 +301,16 @@ async function commitDraft(typeKey) {
     draft[typeKey] = null
     return
   }
+  // 요청이 나가는 즉시 draft를 비워서, 응답 오기 전에 blur/재debounce로
+  // 같은 내용이 중복 커밋되는 걸 막음 (실패하면 아래 catch에서 복구)
+  draft[typeKey] = null
   const type = TYPES.find(t => t.key === typeKey).apiType
   try {
     const data = await trackSave(retrospectApi.addItem(route.params.date, type, content))
     applyResponse(data)
-    draft[typeKey] = null
-  } catch { /* handled */ }
+  } catch {
+    draft[typeKey] = content
+  }
 }
 
 let dragState = null
@@ -371,6 +390,7 @@ async function openGuide(field) {
 }
 
 onMounted(loadRetro)
+watch(() => route.params.date, loadRetro)
 </script>
 
 <style scoped>

@@ -49,7 +49,7 @@ public class RetrospectService {
     public RetrospectDto.Response getByDate(Long userId, LocalDate date) {
         validateNotFuture(date);
         return retrospectRepository.findByUserIdAndDate(userId, date)
-                .map(RetrospectDto.Response::from)
+                .map(this::toResponse)
                 .orElse(null);
     }
 
@@ -64,7 +64,7 @@ public class RetrospectService {
 
         retrospect.setScore(request.getScore());
         retrospect.setIsGithubSynced(false);
-        return RetrospectDto.Response.from(retrospectRepository.save(retrospect));
+        return toResponse(retrospectRepository.save(retrospect));
     }
 
     // 삭제 — 기간 제한 없음
@@ -102,7 +102,7 @@ public class RetrospectService {
         retrospect.setIsGithubSynced(false);
         retrospectRepository.save(retrospect);
 
-        return RetrospectDto.Response.from(reload(retrospect.getId()));
+        return toResponse(reload(retrospect.getId()));
     }
 
     // KPT 항목 수정
@@ -121,7 +121,7 @@ public class RetrospectService {
         item.getRetrospect().setIsGithubSynced(false);
         retrospectRepository.save(item.getRetrospect());
 
-        return RetrospectDto.Response.from(reload(item.getRetrospect().getId()));
+        return toResponse(reload(item.getRetrospect().getId()));
     }
 
     // KPT 항목 삭제
@@ -138,7 +138,7 @@ public class RetrospectService {
         retrospect.setIsGithubSynced(false);
         retrospectRepository.save(retrospect);
 
-        return RetrospectDto.Response.from(reload(retrospectId));
+        return toResponse(retrospect);
     }
 
     // KPT 항목 순서 변경
@@ -162,7 +162,7 @@ public class RetrospectService {
         }
         kptItemRepository.saveAll(items);
 
-        return RetrospectDto.Response.from(reload(retrospect.getId()));
+        return toResponse(retrospect);
     }
 
     // 동시 요청이 겹쳐서 같은 유저+날짜로 동시에 생성을 시도할 수 있음 —
@@ -181,6 +181,13 @@ public class RetrospectService {
             return retrospectRepository.findByUserIdAndDate(userId, date)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "회고 생성 중 오류가 발생했습니다."));
         }
+    }
+
+    // items는 항상 DB에서 새로 조회 — 영속성 컨텍스트에 이미 로드된 컬렉션을 쓰면
+    // 같은 트랜잭션 안에서 방금 추가/삭제/수정한 항목이 응답에 반영 안 될 수 있음
+    private RetrospectDto.Response toResponse(Retrospect r) {
+        List<KptItem> items = kptItemRepository.findByRetrospectIdOrderByOrderIndexAsc(r.getId());
+        return RetrospectDto.Response.from(r, items);
     }
 
     private Retrospect reload(Long id) {
