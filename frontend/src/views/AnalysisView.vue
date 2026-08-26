@@ -11,8 +11,10 @@
       </button>
     </div>
 
+    <div v-if="pageLoading" class="empty-text" style="padding:40px 0;text-align:center">불러오는 중...</div>
+
     <!-- 개요 탭 -->
-    <div v-if="activeTab === 'overview'" class="tab-content">
+    <div v-else-if="activeTab === 'overview'" class="tab-content">
       <!-- 통계 카드 -->
       <div class="stat-cards">
         <div class="stat-card">
@@ -117,6 +119,7 @@ import { ref, computed, onMounted } from 'vue'
 import { retrospectApi } from '@/api/retrospect'
 import { aiApi } from '@/api/ai'
 import Icon from '@/components/Icon.vue'
+import { calendarCache } from '@/utils/calendarCache'
 
 const activeTab = ref('overview')
 const tabs = [
@@ -125,6 +128,7 @@ const tabs = [
   { key: 'recommend', label: '추천' }
 ]
 
+const pageLoading = ref(false)
 const allRetros = ref([])
 const aiInsight = ref('')
 const aiLoading = ref(false)
@@ -222,16 +226,27 @@ async function loadRecommendations() {
 }
 
 async function loadAll() {
+  pageLoading.value = true
   try {
-    // 최근 3개월치 로드
+    // 최근 3개월치 로드 (캘린더 화면에서 이미 본 달이면 캐시 재사용)
     const now = new Date()
-    const results = await Promise.all([
-      retrospectApi.getCalendar(now.getFullYear(), now.getMonth() + 1),
-      retrospectApi.getCalendar(now.getFullYear(), now.getMonth() || 12),
-      retrospectApi.getCalendar(now.getFullYear(), now.getMonth() - 1 || 11),
-    ])
+    const months = [
+      [now.getFullYear(), now.getMonth() + 1],
+      [now.getFullYear(), now.getMonth() || 12],
+      [now.getFullYear(), now.getMonth() - 1 || 11],
+    ]
+    const results = await Promise.all(months.map(([y, m]) => {
+      const key = `${y}-${m}`
+      const cached = calendarCache.get(key)
+      if (cached) return cached
+      return retrospectApi.getCalendar(y, m).then(data => {
+        calendarCache.set(key, data)
+        return data
+      })
+    }))
     allRetros.value = results.flat().sort((a, b) => b.date.localeCompare(a.date))
   } catch (e) { console.error(e) }
+  finally { pageLoading.value = false }
 }
 
 onMounted(loadAll)

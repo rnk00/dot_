@@ -10,6 +10,8 @@
     <!-- 미래 날짜: 접근 불가 -->
     <div v-if="isFuture" class="blocked-msg">접근할 수 없는 페이지입니다.</div>
 
+    <div v-else-if="pageLoading" class="blocked-msg">불러오는 중...</div>
+
     <div v-else class="retro-body">
       <!-- 만족도 -->
       <div class="card">
@@ -51,8 +53,9 @@
             <input
               v-if="!isReadOnly"
               class="item-input"
+              :class="{ saving: isTemp(item) }"
               :value="item.content"
-              :disabled="isTemp(item)"
+              :ref="el => el && isTemp(item) && focusTemp(el, item.id)"
               @input="onItemInput(t.key, item, $event.target.value)"
             />
             <span v-else class="item-text">{{ item.content }}</span>
@@ -129,13 +132,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { retrospectApi } from '@/api/retrospect'
 import { aiApi } from '@/api/ai'
 import { githubApi } from '@/api/github'
 import { useAuthStore } from '@/stores/auth'
 import Icon from '@/components/Icon.vue'
+import { calendarCache } from '@/utils/calendarCache'
 
 const router = useRouter()
 const route = useRoute()
@@ -149,6 +153,7 @@ const TYPES = [
 
 const scoreColors = { 1: '#FFADAD', 2: '#FFD6A5', 3: '#FDFFB6', 4: '#CAFFBF', 5: '#8CD98C' }
 
+const pageLoading = ref(false)
 const retrospectId = ref(null)
 const isGithubSynced = ref(false)
 const score = ref(3)
@@ -210,13 +215,16 @@ async function trackSave(promise) {
   }
 }
 
-function applyResponse(data) {
+function applyResponse(data, { mutated = false } = {}) {
   retrospectId.value = data.id
   isGithubSynced.value = !!data.isGithubSynced
   score.value = data.score ?? 3
   lists.keep = data.keep || []
   lists.problem = data.problem || []
   lists.tryItems = data.tryItems || []
+  // 캘린더 화면의 점수/작성여부 표시가 이 회고에 달려있으므로, 실제로 뭔가 바뀐 경우에만
+  // 캐시를 지워서 캘린더로 돌아갔을 때 최신 상태로 다시 불러오게 함
+  if (mutated) calendarCache.clear()
 }
 
 function resetState() {
@@ -236,11 +244,14 @@ function resetState() {
 async function loadRetro() {
   resetState()
   if (isFuture.value) return
+  pageLoading.value = true
   try {
     const data = await retrospectApi.getByDate(route.params.date)
     if (data) applyResponse(data)
   } catch (e) {
     if (e.response?.status !== 404) console.error(e)
+  } finally {
+    pageLoading.value = false
   }
 }
 
@@ -249,7 +260,7 @@ async function changeScore(n) {
   score.value = n
   try {
     const data = await trackSave(retrospectApi.upsertScore(route.params.date, n))
-    applyResponse(data)
+    applyResponse(data, { mutated: true })
   } catch { /* handled in trackSave */ }
 }
 
@@ -262,7 +273,7 @@ function onItemInput(typeKey, item, value) {
     if (!trimmed) return
     try {
       const data = await trackSave(retrospectApi.updateItem(route.params.date, item.id, trimmed))
-      applyResponse(data)
+      applyResponse(data, { mutated: true })
     } catch { /* handled */ }
   }, 1000)
 }
@@ -271,13 +282,24 @@ function isTemp(item) {
   return typeof item.id === 'string' && item.id.startsWith('temp-')
 }
 
+const focusedTempIds = new Set()
+function focusTemp(el, tempId) {
+  if (focusedTempIds.has(tempId)) return
+  focusedTempIds.add(tempId)
+  nextTick(() => {
+    el.focus()
+    const len = el.value.length
+    el.setSelectionRange(len, len)
+  })
+}
+
 async function removeItem(typeKey, item) {
   // 낙관적 업데이트: 응답 기다리지 않고 바로 화면에서 제거, 실패하면 원래 위치로 복구
   const idx = lists[typeKey].indexOf(item)
   lists[typeKey] = lists[typeKey].filter(i => i !== item)
   try {
     const data = await trackSave(retrospectApi.deleteItem(route.params.date, item.id))
-    applyResponse(data)
+    applyResponse(data, { mutated: true })
   } catch {
     const arr = [...lists[typeKey]]
     arr.splice(idx, 0, item)
@@ -322,7 +344,7 @@ async function commitDraft(typeKey) {
   const type = TYPES.find(t => t.key === typeKey).apiType
   try {
     const data = await trackSave(retrospectApi.addItem(route.params.date, type, content))
-    applyResponse(data) // 실제 서버 목록으로 교체 — 임시 항목이 진짜 항목으로 자연스럽게 바뀜
+    applyResponse(data, { mutated: true }) // 실제 서버 목록으로 교체 — 임시 항목이 진짜 항목으로 자연스럽게 바뀜
   } catch {
     lists[typeKey] = lists[typeKey].filter(i => i.id !== tempId)
     draft[typeKey] = content
@@ -345,7 +367,7 @@ async function onDrop(typeKey, targetIndex) {
   const type = TYPES.find(t => t.key === typeKey).apiType
   try {
     const data = await trackSave(retrospectApi.reorderItems(route.params.date, type, arr.map(i => i.id)))
-    applyResponse(data)
+    applyResponse(data, { mutated: true })
   } catch { /* handled */ }
 }
 
@@ -372,7 +394,7 @@ async function addAiSuggestion() {
   if (!aiSuggestion.value || lists.tryItems.length >= 20) return
   try {
     const data = await trackSave(retrospectApi.addItem(route.params.date, 'TRY', aiSuggestion.value))
-    applyResponse(data)
+    applyResponse(data, { mutated: true })
     aiSuggestion.value = ''
   } catch { /* handled */ }
 }
@@ -547,6 +569,7 @@ watch(() => route.params.date, loadRetro)
   font-family: inherit;
 }
 .item-input:focus { outline: none; border-color: #6366f1; }
+.item-input.saving { opacity: 0.6; }
 .item-text { border-color: transparent; background: #f8fafc; }
 
 .item-del {

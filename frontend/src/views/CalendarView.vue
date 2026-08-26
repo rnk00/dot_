@@ -2,7 +2,8 @@
   <div class="calendar-page">
     <div class="calendar-layout">
       <!-- 좌측: 캘린더 -->
-      <section class="calendar-section">
+      <section class="calendar-section" :class="{ loading: calendarLoading }">
+        <div v-if="calendarLoading" class="loading-overlay">불러오는 중...</div>
         <!-- 월 네비게이션 -->
         <div class="month-nav">
           <button class="nav-btn" @click="prevMonth">‹</button>
@@ -97,6 +98,7 @@ import { useRouter } from 'vue-router'
 import { retrospectApi } from '@/api/retrospect'
 import { aiApi } from '@/api/ai'
 import Icon from '@/components/Icon.vue'
+import { calendarCache } from '@/utils/calendarCache'
 
 const router = useRouter()
 const today = new Date()
@@ -202,10 +204,23 @@ async function getInsight() {
   finally { aiLoading.value = false }
 }
 
+const calendarLoading = ref(false)
+
 async function loadCalendar() {
+  const key = `${currentYear.value}-${currentMonth.value}`
+  const cached = calendarCache.get(key)
+  if (cached) {
+    // 이미 본 적 있는 달이면 캐시로 즉시 표시하고, 최신 데이터로 조용히 갱신
+    calendarData.value = cached
+  } else {
+    calendarLoading.value = true
+  }
   try {
-    calendarData.value = await retrospectApi.getCalendar(currentYear.value, currentMonth.value)
+    const data = await retrospectApi.getCalendar(currentYear.value, currentMonth.value)
+    calendarData.value = data
+    calendarCache.set(key, data)
   } catch (e) { console.error(e) }
+  finally { calendarLoading.value = false }
 }
 
 watch([currentYear, currentMonth], () => { aiInsight.value = ''; loadCalendar() })
@@ -232,10 +247,25 @@ onMounted(loadCalendar)
 
 /* 캘린더 섹션 */
 .calendar-section {
+  position: relative;
   background: #fff;
   border-radius: 16px;
   padding: 24px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.75);
+  border-radius: 16px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #6366f1;
+  z-index: 5;
 }
 
 .month-nav {
