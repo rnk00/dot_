@@ -42,7 +42,7 @@
             v-for="(item, idx) in lists[t.key]"
             :key="item.id"
             class="kpt-item"
-            :draggable="!isReadOnly"
+            :draggable="!isReadOnly && !isTemp(item)"
             @dragstart="onDragStart(t.key, idx)"
             @dragover.prevent
             @drop="onDrop(t.key, idx)"
@@ -52,10 +52,11 @@
               v-if="!isReadOnly"
               class="item-input"
               :value="item.content"
+              :disabled="isTemp(item)"
               @input="onItemInput(t.key, item, $event.target.value)"
             />
             <span v-else class="item-text">{{ item.content }}</span>
-            <button v-if="!isReadOnly" class="item-del" @click="removeItem(t.key, item)">×</button>
+            <button v-if="!isReadOnly" class="item-del" :disabled="isTemp(item)" @click="removeItem(t.key, item)">×</button>
           </div>
 
           <div v-if="draft[t.key] !== null" class="kpt-item">
@@ -266,11 +267,22 @@ function onItemInput(typeKey, item, value) {
   }, 1000)
 }
 
+function isTemp(item) {
+  return typeof item.id === 'string' && item.id.startsWith('temp-')
+}
+
 async function removeItem(typeKey, item) {
+  // 낙관적 업데이트: 응답 기다리지 않고 바로 화면에서 제거, 실패하면 원래 위치로 복구
+  const idx = lists[typeKey].indexOf(item)
+  lists[typeKey] = lists[typeKey].filter(i => i !== item)
   try {
     const data = await trackSave(retrospectApi.deleteItem(route.params.date, item.id))
     applyResponse(data)
-  } catch { /* handled */ }
+  } catch {
+    const arr = [...lists[typeKey]]
+    arr.splice(idx, 0, item)
+    lists[typeKey] = arr
+  }
 }
 
 function openDraft(typeKey) {
@@ -304,11 +316,15 @@ async function commitDraft(typeKey) {
   // 요청이 나가는 즉시 draft를 비워서, 응답 오기 전에 blur/재debounce로
   // 같은 내용이 중복 커밋되는 걸 막음 (실패하면 아래 catch에서 복구)
   draft[typeKey] = null
+  // 응답 오기 전까지 화면이 비어 보이지 않도록, 임시 항목을 먼저 낙관적으로 표시
+  const tempId = `temp-${Date.now()}-${Math.random()}`
+  lists[typeKey] = [...lists[typeKey], { id: tempId, content }]
   const type = TYPES.find(t => t.key === typeKey).apiType
   try {
     const data = await trackSave(retrospectApi.addItem(route.params.date, type, content))
-    applyResponse(data)
+    applyResponse(data) // 실제 서버 목록으로 교체 — 임시 항목이 진짜 항목으로 자연스럽게 바뀜
   } catch {
+    lists[typeKey] = lists[typeKey].filter(i => i.id !== tempId)
     draft[typeKey] = content
   }
 }
