@@ -42,7 +42,7 @@
         <div class="item-list">
           <div
             v-for="(item, idx) in lists[t.key]"
-            :key="item.id"
+            :key="item._uid"
             class="kpt-item"
             :draggable="!isReadOnly && !isTemp(item)"
             @dragstart="onDragStart(t.key, idx)"
@@ -55,7 +55,6 @@
               class="item-input"
               :class="{ saving: isTemp(item) }"
               :value="item.content"
-              :ref="el => el && isTemp(item) && focusTemp(el, item.id)"
               @input="onItemInput(t.key, item, $event.target.value)"
             />
             <span v-else class="item-text">{{ item.content }}</span>
@@ -132,7 +131,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { retrospectApi } from '@/api/retrospect'
 import { aiApi } from '@/api/ai'
@@ -215,16 +214,45 @@ async function trackSave(promise) {
   }
 }
 
+// 서버 id와 별개로 DOM :key에 쓸 안정적인 로컬 id.
+// item.id는 확정 전엔 null(임시 항목)이었다가 서버 응답 후 실제 값으로 바뀌는데,
+// _uid는 그 과정 내내 그대로 유지돼서 Vue가 같은 엘리먼트로 인식 -> 포커스가 안 끊김
+let uidSeq = 0
+function nextUid() { return ++uidSeq }
+
+function isTemp(item) {
+  return item.id == null
+}
+
+// 서버에서 받은 목록을 그대로 대입하지 않고, 이미 알고 있는 항목(id로 매칭)은
+// 같은 객체(=같은 _uid)를 재사용해서 병합. 새 항목만 _uid를 새로 발급.
+function mergeItems(typeKey, serverItems) {
+  const oldById = new Map(lists[typeKey].filter(i => i.id != null).map(i => [i.id, i]))
+  return (serverItems || []).map(si => {
+    const existing = oldById.get(si.id)
+    if (existing) {
+      existing.content = si.content
+      return existing
+    }
+    return { ...si, _uid: nextUid() }
+  })
+}
+
+function monthKeyOf(dateStr) {
+  const [y, m] = dateStr.split('-')
+  return `${parseInt(y)}-${parseInt(m)}`
+}
+
 function applyResponse(data, { mutated = false } = {}) {
   retrospectId.value = data.id
   isGithubSynced.value = !!data.isGithubSynced
   score.value = data.score ?? 3
-  lists.keep = data.keep || []
-  lists.problem = data.problem || []
-  lists.tryItems = data.tryItems || []
+  lists.keep = mergeItems('keep', data.keep)
+  lists.problem = mergeItems('problem', data.problem)
+  lists.tryItems = mergeItems('tryItems', data.tryItems)
   // 캘린더 화면의 점수/작성여부 표시가 이 회고에 달려있으므로, 실제로 뭔가 바뀐 경우에만
-  // 캐시를 지워서 캘린더로 돌아갔을 때 최신 상태로 다시 불러오게 함
-  if (mutated) calendarCache.clear()
+  // 그 달의 캐시만 지워서(전체 캐시는 유지) 캘린더로 돌아갔을 때 최신 상태로 다시 불러오게 함
+  if (mutated) calendarCache.delete(monthKeyOf(data.date || route.params.date))
 }
 
 function resetState() {
@@ -267,30 +295,20 @@ async function changeScore(n) {
 function onItemInput(typeKey, item, value) {
   item.content = value
   saveState.value = pending > 0 ? 'saving' : 'unsaved'
-  clearTimeout(itemTimers[item.id])
-  itemTimers[item.id] = setTimeout(async () => {
+  clearTimeout(itemTimers[item._uid])
+  itemTimers[item._uid] = setTimeout(async () => {
     const trimmed = item.content.trim()
     if (!trimmed) return
+    if (item.id == null) {
+      // 아직 서버에 생성 확정이 안 된(임시) 항목 — 확정될 때까지 짧게 재시도
+      itemTimers[item._uid] = setTimeout(() => onItemInput(typeKey, item, item.content), 300)
+      return
+    }
     try {
       const data = await trackSave(retrospectApi.updateItem(route.params.date, item.id, trimmed))
       applyResponse(data, { mutated: true })
     } catch { /* handled */ }
   }, 1000)
-}
-
-function isTemp(item) {
-  return typeof item.id === 'string' && item.id.startsWith('temp-')
-}
-
-const focusedTempIds = new Set()
-function focusTemp(el, tempId) {
-  if (focusedTempIds.has(tempId)) return
-  focusedTempIds.add(tempId)
-  nextTick(() => {
-    el.focus()
-    const len = el.value.length
-    el.setSelectionRange(len, len)
-  })
 }
 
 async function removeItem(typeKey, item) {
@@ -338,15 +356,22 @@ async function commitDraft(typeKey) {
   // 요청이 나가는 즉시 draft를 비워서, 응답 오기 전에 blur/재debounce로
   // 같은 내용이 중복 커밋되는 걸 막음 (실패하면 아래 catch에서 복구)
   draft[typeKey] = null
-  // 응답 오기 전까지 화면이 비어 보이지 않도록, 임시 항목을 먼저 낙관적으로 표시
-  const tempId = `temp-${Date.now()}-${Math.random()}`
-  lists[typeKey] = [...lists[typeKey], { id: tempId, content }]
+  // 응답 오기 전까지 화면이 비어 보이지 않도록, 임시 항목을 먼저 낙관적으로 표시.
+  // id는 아직 없지만 _uid는 있어서 확정된 후에도 같은 엘리먼트로 유지됨(포커스 안 끊김)
+  const tempItem = { id: null, content, _uid: nextUid() }
+  lists[typeKey] = [...lists[typeKey], tempItem]
   const type = TYPES.find(t => t.key === typeKey).apiType
   try {
-    const data = await trackSave(retrospectApi.addItem(route.params.date, type, content))
-    applyResponse(data, { mutated: true }) // 실제 서버 목록으로 교체 — 임시 항목이 진짜 항목으로 자연스럽게 바뀜
+    const data = await trackSave(retrospectApi.addItem(route.params.date, type, tempItem.content))
+    const serverItem = (data[typeKey] || []).at(-1) // 방금 추가되어 맨 뒤에 붙은 항목
+    if (serverItem) {
+      // 같은 객체를 그대로 갱신(= 같은 _uid) — 그 사이 사용자가 더 입력했으면 로컬 content를 우선
+      tempItem.id = serverItem.id
+      if (tempItem.content === content) tempItem.content = serverItem.content
+    }
+    applyResponse(data, { mutated: true }) // 나머지(점수/다른 타입/동기화상태)까지 최신화, 이 항목은 위에서 이미 확정돼 병합 시 그대로 재사용됨
   } catch {
-    lists[typeKey] = lists[typeKey].filter(i => i.id !== tempId)
+    lists[typeKey] = lists[typeKey].filter(i => i !== tempItem)
     draft[typeKey] = content
   }
 }
