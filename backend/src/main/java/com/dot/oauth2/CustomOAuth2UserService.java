@@ -21,13 +21,18 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
 
     @Override
     public OAuth2User loadUser(OAuth2UserRequest userRequest) throws OAuth2AuthenticationException {
-        OAuth2User oAuth2User = super.loadUser(userRequest);
-        String registrationId = userRequest.getClientRegistration().getRegistrationId();
+        try {
+            OAuth2User oAuth2User = super.loadUser(userRequest);
+            String registrationId = userRequest.getClientRegistration().getRegistrationId();
 
-        OAuth2UserInfo userInfo = extractUserInfo(registrationId, oAuth2User.getAttributes());
-        User user = saveOrUpdate(userInfo, registrationId);
+            OAuth2UserInfo userInfo = extractUserInfo(registrationId, oAuth2User.getAttributes());
+            User user = saveOrUpdate(userInfo, registrationId);
 
-        return new CustomOAuth2User(user, oAuth2User.getAttributes());
+            return new CustomOAuth2User(user, oAuth2User.getAttributes());
+        } catch (Exception e) {
+            log.error("OAuth2 로그인 처리 중 오류", e);
+            throw e;
+        }
     }
 
     private OAuth2UserInfo extractUserInfo(String registrationId, Map<String, Object> attributes) {
