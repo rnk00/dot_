@@ -2,6 +2,7 @@
 build/
 backend/.gradle/
 backend/build/
+backend/bin/
 
 # env
 .env
