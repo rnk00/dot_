@@ -1,6 +1,7 @@
 package com.dot.config;
 
 import com.dot.oauth2.CustomOAuth2UserService;
+import com.dot.oauth2.HttpCookieOAuth2AuthorizationRequestRepository;
 import com.dot.oauth2.OAuth2SuccessHandler;
 import com.dot.security.JwtAuthFilter;
 import com.dot.security.JwtUtil;
@@ -31,6 +32,7 @@ public class SecurityConfig {
     private final JwtUtil jwtUtil;
     private final CustomOAuth2UserService customOAuth2UserService;
     private final OAuth2SuccessHandler oAuth2SuccessHandler;
+    private final HttpCookieOAuth2AuthorizationRequestRepository authorizationRequestRepository;
 
     @Value("${app.frontend-url:http://localhost:5173}")
     private String frontendUrl;
@@ -48,6 +50,8 @@ public class SecurityConfig {
                 .anyRequest().authenticated()
             )
             .oauth2Login(oauth -> oauth
+                .authorizationEndpoint(endpoint ->
+                    endpoint.authorizationRequestRepository(authorizationRequestRepository))
                 .userInfoEndpoint(userInfo ->
                     userInfo.userService(customOAuth2UserService))
                 .successHandler(oAuth2SuccessHandler)
