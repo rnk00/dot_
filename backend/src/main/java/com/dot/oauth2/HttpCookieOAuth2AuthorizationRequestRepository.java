@@ -3,6 +3,7 @@ package com.dot.oauth2;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.oauth2.client.web.AuthorizationRequestRepository;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.stereotype.Component;
@@ -19,6 +20,7 @@ import java.util.Base64;
  * 세션에 저장한다. 이 둘이 맞지 않아 콜백에서 "authorization_request_not_found"가 나므로,
  * 세션 대신 짧게 사는 쿠키에 저장한다.
  */
+@Slf4j
 @Component
 public class HttpCookieOAuth2AuthorizationRequestRepository
         implements AuthorizationRequestRepository<OAuth2AuthorizationRequest> {
@@ -28,6 +30,10 @@ public class HttpCookieOAuth2AuthorizationRequestRepository
 
     @Override
     public OAuth2AuthorizationRequest loadAuthorizationRequest(HttpServletRequest request) {
+        int cookieCount = request.getCookies() == null ? 0 : request.getCookies().length;
+        boolean found = getCookie(request).isPresent();
+        log.info("[oauth2-cookie] load: host={} secure={} cookieCount={} found={}",
+                request.getHeader("Host"), request.isSecure(), cookieCount, found);
         return getCookie(request).map(this::deserialize).orElse(null);
     }
 
@@ -44,6 +50,8 @@ public class HttpCookieOAuth2AuthorizationRequestRepository
         cookie.setSecure(request.isSecure());
         cookie.setMaxAge(COOKIE_MAX_AGE);
         response.addCookie(cookie);
+        log.info("[oauth2-cookie] save: host={} secure={} valueLen={}",
+                request.getHeader("Host"), request.isSecure(), cookie.getValue().length());
     }
 
     @Override
