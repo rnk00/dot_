@@ -1,6 +1,5 @@
 package com.dot.oauth2;
 
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -12,27 +11,24 @@ import org.springframework.security.oauth2.client.web.AuthorizationRequestReposi
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.stereotype.Component;
 
-import java.util.Arrays;
 import java.util.Map;
-import java.util.Optional;
 
 /**
- * 우리 백엔드는 SessionCreationPolicy.STATELESS라 HTTP 세션을 안 쓰는데, Spring Security의
- * 기본 oauth2Login()은 로그인 진행 중(authorize -> callback 사이) 상태를 세션에 저장해서
- * 콜백에서 "authorization_request_not_found"가 났었다. 세션 대신 쿠키를 썼더니 이번엔
- * OAuth2AuthorizationRequest 전체(직렬화하면 2KB 넘음)를 쿠키 값에 담다 보니 간헐적으로
- * 유실되는 문제가 있었다. 그래서 쿠키에는 최소한의 정보(provider 이름)만 담고, 나머지는
- * ClientRegistrationRepository에서 그때그때 다시 만든다. 또한 쿠키 이름 자체에 state 값을
- * 넣어서, 동시에 여러 로그인 시도가 겹쳐도 서로 다른 쿠키를 쓰게 해 덮어쓰기 경합도 없앤다.
+ * Render(무료 인스턴스) 앞단 인프라를 거치면서 이 리다이렉트 응답의 Set-Cookie가
+ * 브라우저까지 살아서 안 돌아오는 문제를 세션 저장, 큰 쿠키, 요청별 작은 쿠키까지
+ * 다 시도해봐도 못 없애서, 아예 서버 쪽에 아무것도 저장하지 않는 방식으로 바꿨다.
+ *
+ * 콜백 URL 자체가 "/login/oauth2/code/{registrationId}" 형태라 어떤 제공자로 로그인
+ * 중이었는지는 URL만 보고도 알 수 있고, 나머지(클라이언트ID, 인가 URI, scope 등)는
+ * ClientRegistrationRepository에서 바로 조회 가능하다. state 값은 콜백에 그대로
+ * 들어있는 걸 신뢰해서 그대로 사용한다(=저장해둔 값과 대조하는 CSRF 검증은 빠짐 —
+ * 개인 프로젝트 규모에서는 감수 가능한 트레이드오프로 판단).
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class HttpCookieOAuth2AuthorizationRequestRepository
         implements AuthorizationRequestRepository<OAuth2AuthorizationRequest> {
-
-    private static final String COOKIE_PREFIX = "oauth2_req_";
-    private static final int COOKIE_MAX_AGE = 180; // 초 — 로그인 절차 도중에만 필요
 
     private final ClientRegistrationRepository clientRegistrationRepository;
 
@@ -47,81 +43,47 @@ public class HttpCookieOAuth2AuthorizationRequestRepository
     @Override
     public void saveAuthorizationRequest(OAuth2AuthorizationRequest authorizationRequest,
                                           HttpServletRequest request, HttpServletResponse response) {
-        if (authorizationRequest == null) return;
-
-        String registrationId = registrationIdOf(authorizationRequest);
-        String state = authorizationRequest.getState();
-        if (registrationId == null || state == null) return;
-
-        Cookie cookie = new Cookie(cookieName(state), registrationId);
-        cookie.setPath("/");
-        cookie.setHttpOnly(true);
-        cookie.setSecure(request.isSecure());
-        cookie.setMaxAge(COOKIE_MAX_AGE);
-        response.addCookie(cookie);
-        log.info("[oauth2-cookie] save: provider={} state={}", registrationId, shorten(state));
+        // 아무것도 저장하지 않음 — 콜백 시점에 URL 정보만으로 재구성
     }
 
     @Override
     public OAuth2AuthorizationRequest removeAuthorizationRequest(HttpServletRequest request,
                                                                    HttpServletResponse response) {
-        OAuth2AuthorizationRequest authorizationRequest = reconstruct(request);
-        String state = request.getParameter("state");
-        if (state != null) {
-            Cookie cookie = new Cookie(cookieName(state), "");
-            cookie.setPath("/");
-            cookie.setHttpOnly(true);
-            cookie.setSecure(request.isSecure());
-            cookie.setMaxAge(0);
-            response.addCookie(cookie);
-        }
-        return authorizationRequest;
+        return reconstruct(request);
     }
 
-    // 쿠키(있으면 provider 이름 하나)와 콜백 URL의 state 파라미터로부터
-    // ClientRegistration 정보를 다시 조회해 OAuth2AuthorizationRequest를 그때그때 새로 만든다.
     private OAuth2AuthorizationRequest reconstruct(HttpServletRequest request) {
+        String registrationId = registrationIdFromUri(request.getRequestURI());
         String state = request.getParameter("state");
-        if (state == null) return null;
-
-        String registrationId = getCookieValue(request, cookieName(state)).orElse(null);
-        log.info("[oauth2-cookie] load: state={} found={}", shorten(state), registrationId != null);
-        if (registrationId == null) return null;
+        if (registrationId == null || state == null) {
+            log.info("[oauth2] reconstruct 불가: uri={} state={}", request.getRequestURI(), state);
+            return null;
+        }
 
         ClientRegistration registration = clientRegistrationRepository.findByRegistrationId(registrationId);
-        if (registration == null) return null;
+        if (registration == null) {
+            log.info("[oauth2] 등록되지 않은 provider: {}", registrationId);
+            return null;
+        }
 
-        String redirectUri = backendUrl + "/login/oauth2/code/" + registrationId;
+        log.info("[oauth2] reconstruct: provider={} state={}...", registrationId,
+                state.length() > 8 ? state.substring(0, 8) : state);
 
         return OAuth2AuthorizationRequest.authorizationCode()
                 .authorizationUri(registration.getProviderDetails().getAuthorizationUri())
                 .clientId(registration.getClientId())
-                .redirectUri(redirectUri)
+                .redirectUri(backendUrl + "/login/oauth2/code/" + registrationId)
                 .scopes(registration.getScopes())
                 .state(state)
                 .attributes(Map.of("registration_id", registrationId))
                 .build();
     }
 
-    private String registrationIdOf(OAuth2AuthorizationRequest authorizationRequest) {
-        Object id = authorizationRequest.getAttributes().get("registration_id");
-        return id != null ? id.toString() : null;
-    }
-
-    private String cookieName(String state) {
-        // state는 base64url이라 대부분 쿠키 이름에 안전하지만, 혹시 모를 문자(=)는 제거
-        return COOKIE_PREFIX + state.replaceAll("[^A-Za-z0-9_-]", "");
-    }
-
-    private Optional<String> getCookieValue(HttpServletRequest request, String name) {
-        if (request.getCookies() == null) return Optional.empty();
-        return Arrays.stream(request.getCookies())
-                .filter(c -> name.equals(c.getName()))
-                .map(Cookie::getValue)
-                .findFirst();
-    }
-
-    private String shorten(String state) {
-        return state.length() > 8 ? state.substring(0, 8) + "..." : state;
+    // "/login/oauth2/code/kakao" -> "kakao" / "/oauth2/authorization/kakao" -> "kakao"
+    private String registrationIdFromUri(String uri) {
+        if (uri == null) return null;
+        int lastSlash = uri.lastIndexOf('/');
+        if (lastSlash < 0 || lastSlash == uri.length() - 1) return null;
+        return uri.substring(lastSlash + 1);
     }
 }
