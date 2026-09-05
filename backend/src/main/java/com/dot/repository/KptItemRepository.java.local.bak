@@ -1,0 +1,20 @@
+package com.dot.repository;
+
+import com.dot.entity.KptItem;
+import com.dot.entity.KptType;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.time.LocalDate;
+import java.util.List;
+
+public interface KptItemRepository extends JpaRepository<KptItem, Long> {
+    List<KptItem> findByRetrospectIdAndTypeOrderByOrderIndexAsc(Long retrospectId, KptType type);
+    int countByRetrospectIdAndType(Long retrospectId, KptType type);
+
+    // 기간별 분석/추천용: 유저의 특정 타입 항목들을 날짜 범위로 조회
+    List<KptItem> findByRetrospect_User_IdAndTypeInAndRetrospect_DateBetween(
+            Long userId, List<KptType> types, LocalDate start, LocalDate end);
+
+    List<KptItem> findByRetrospect_User_IdAndTypeAndRetrospect_DateBetween(
+            Long userId, KptType type, LocalDate start, LocalDate end);
+}
