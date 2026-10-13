@@ -1,6 +1,6 @@
 <template>
   <div class="callback-page">
-    <p>로그인 중...</p>
+    <DotLoader label="로그인하는 중" />
   </div>
 </template>
 
@@ -8,6 +8,7 @@
 import { onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import DotLoader from '@/components/DotLoader.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -31,6 +32,8 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-text-secondary);
+  background: var(--dot-grid), var(--paper);
+  font-family: var(--font-serif);
+  color: var(--ink-soft);
 }
 </style>

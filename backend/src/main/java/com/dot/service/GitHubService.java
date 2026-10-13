@@ -231,7 +231,7 @@ public class GitHubService {
                 %s
 
                 ---
-                *DOT 회고 노트에서 작성*
+                *dot day에서 작성*
                 """,
                 retro.getDate(),
                 stars, retro.getScore(),

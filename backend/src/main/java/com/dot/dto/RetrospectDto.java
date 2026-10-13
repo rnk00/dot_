@@ -82,6 +82,8 @@ public class RetrospectDto {
         private LocalDate date;
         private Integer score;
         private String colorTheme;
+        private List<ItemResponse> keep;     // 분석·AI 인사이트용 K/P 내용
+        private List<ItemResponse> problem;
     }
 
     @Getter

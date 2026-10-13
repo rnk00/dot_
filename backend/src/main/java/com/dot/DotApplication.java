@@ -2,10 +2,12 @@ package com.dot;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 import java.util.TimeZone;
 
 @SpringBootApplication
+@EnableScheduling // 작성 기간 지난 AI 추천 히스토리 정리
 public class DotApplication {
 
     public static void main(String[] args) {

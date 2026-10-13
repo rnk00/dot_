@@ -16,6 +16,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -34,14 +36,33 @@ public class RetrospectService {
         LocalDate startDate = LocalDate.of(year, month, 1);
         LocalDate endDate = startDate.withDayOfMonth(startDate.lengthOfMonth());
 
-        return retrospectRepository.findByUserIdAndDateBetween(userId, startDate, endDate)
+        List<Retrospect> retros = retrospectRepository.findByUserIdAndDateBetween(userId, startDate, endDate);
+        if (retros.isEmpty()) return List.of();
+
+        Map<Long, List<KptItem>> itemsByRetro = kptItemRepository
+                .findByRetrospectIdInOrderByOrderIndexAsc(retros.stream().map(Retrospect::getId).toList())
                 .stream()
-                .map(r -> RetrospectDto.CalendarItem.builder()
-                        .id(r.getId())
-                        .date(r.getDate())
-                        .score(r.getScore())
-                        .colorTheme(r.getColorTheme())
-                        .build())
+                .collect(Collectors.groupingBy(i -> i.getRetrospect().getId()));
+
+        return retros.stream()
+                .map(r -> {
+                    List<KptItem> items = itemsByRetro.getOrDefault(r.getId(), List.of());
+                    return RetrospectDto.CalendarItem.builder()
+                            .id(r.getId())
+                            .date(r.getDate())
+                            .score(r.getScore())
+                            .colorTheme(r.getColorTheme())
+                            .keep(contentsOf(items, KptItem.Type.KEEP))
+                            .problem(contentsOf(items, KptItem.Type.PROBLEM))
+                            .build();
+                })
+                .toList();
+    }
+
+    private static List<RetrospectDto.ItemResponse> contentsOf(List<KptItem> items, KptItem.Type type) {
+        return items.stream()
+                .filter(i -> i.getType() == type)
+                .map(RetrospectDto.ItemResponse::from)
                 .toList();
     }
 

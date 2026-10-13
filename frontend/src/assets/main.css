@@ -1,11 +1,29 @@
 :root {
-  --color-primary: #4f46e5;
-  --color-bg: #f9fafb;
+  /* ── 도트 노트 컨셉 토큰 ── */
+  --paper: #ffffff;          /* 종이 배경 (흰 종이) */
+  --paper-deep: #f4f4f2;     /* hover 등 한 톤 진한 면 */
+  --sheet: #ffffff;          /* 카드 = 종이 한 장 */
+  --ink: #1f2a44;            /* 잉크(본문·버튼) */
+  --ink-soft: #4b5468;       /* 보조 글씨 */
+  --ink-faint: #8c8f99;      /* 흐린 글씨 */
+  --rule: #e6e6e3;           /* 종이 선 */
+  --dot: #dededb;            /* 도트 그리드 점 */
+  --red-pen: #c8553d;        /* 빨간 펜(오늘 표시 등) */
+  --hl-keep: #bfe8d4;        /* 형광펜 민트 */
+  --hl-problem: #ffcdc6;     /* 형광펜 다홍 (Problem) */
+  --hl-try: #cfe2ff;         /* 형광펜 하늘색 (Try) */
+  --ok-ink: #2f7a5b;         /* 성공 글씨 */
+  --warn-ink: #9a5a12;       /* 경고 글씨 */
+  --font-serif: 'Gowun Batang', 'Nanum Myeongjo', serif;
+  --dot-grid: radial-gradient(circle, var(--dot) 1px, transparent 1.3px) 0 0 / 22px 22px;
+
+  --color-primary: var(--ink);
+  --color-bg: var(--paper);
   --color-surface: #ffffff;
-  --color-text: #111827;
-  --color-text-secondary: #6b7280;
-  --color-border: #e5e7eb;
-  --radius: 12px;
+  --color-text: var(--ink);
+  --color-text-secondary: var(--ink-soft);
+  --color-border: var(--rule);
+  --radius: 6px;
 
   /* 점수별 색상 - default 테마 */
   --score-1: #fee2e2;
