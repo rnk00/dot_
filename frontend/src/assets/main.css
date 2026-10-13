@@ -46,4 +46,3 @@ textarea, input {
 textarea:focus, input:focus {
   border-color: var(--color-primary);
 }
-</style>

@@ -31,7 +31,7 @@ public class AIService {
     /**
      * K, P를 바탕으로 T 자동 제안
      */
-    public String suggestTry(String keep, String problem) {
+    public List<String> suggestTry(String keep, String problem) {
         String prompt = """
                 당신은 개발자의 회고(KPT)를 돕는 코치입니다.
 
@@ -44,13 +44,38 @@ public class AIService {
                 %s
 
                 위 내용을 바탕으로 Try(다음에 시도할 것) 3가지를 구체적이고 실행 가능하게 제안해주세요.
-                각 항목은 번호를 붙여 간결하게 작성하고, 실제 행동으로 옮길 수 있는 내용이어야 합니다.
+
+                출력 규칙:
+                - 정확히 3줄만 출력하고, 한 줄에 Try 하나씩 씁니다.
+                - 각 줄은 한 문장, 60자 이내로 실제 행동으로 옮길 수 있게 씁니다.
+                - 번호, 글머리 기호, 굵게(**) 같은 마크다운, 제목, 설명, 인사말은 쓰지 않습니다.
                 """.formatted(
-                keep != null ? keep : "(없음)",
-                problem != null ? problem : "(없음)"
+                isBlankText(keep) ? "(없음)" : keep,
+                isBlankText(problem) ? "(없음)" : problem
         );
 
-        return callGemma(prompt);
+        List<String> items = parseLines(callGemma(prompt));
+        if (items.isEmpty()) {
+            throw new RuntimeException("AI가 답변을 만들지 못했습니다. 잠시 후 다시 시도해주세요.");
+        }
+        return items;
+    }
+
+    private static boolean isBlankText(String s) {
+        return s == null || s.isBlank();
+    }
+
+    /** 모델이 규칙을 어기고 번호·기호·마크다운을 붙여도 항목 텍스트만 뽑아냄 */
+    private List<String> parseLines(String text) {
+        return text.lines()
+                .map(String::strip)
+                .map(l -> l.replaceFirst("^(\\d+[.)]|[-*•])\\s*", "")) // "1. " "2) " "- " "• " 제거
+                .map(l -> l.replace("**", "").replace("__", ""))
+                .map(String::strip)
+                .filter(l -> !l.isEmpty())
+                .filter(l -> !l.endsWith(":")) // "Try 제안:" 같은 머리말 제거
+                .limit(3)
+                .toList();
     }
 
     /**
@@ -85,7 +110,8 @@ public class AIService {
             Map<String, Object> requestBody = Map.of(
                     "contents", List.of(content),
                     "generationConfig", Map.of(
-                            "maxOutputTokens", 1000,
+                            // 최신 Gemini 모델은 생각(thinking) 토큰도 이 한도에 포함돼서, 너무 작으면 본문이 비어서 옴
+                            "maxOutputTokens", 4096,
                             "temperature", 0.7
                     )
             );
@@ -104,17 +130,48 @@ public class AIService {
 
             if (response == null) throw new RuntimeException("응답 없음");
 
-            List<Map<String, Object>> candidates = (List<Map<String, Object>>) response.get("candidates");
-            Map<String, Object> resContent = (Map<String, Object>) candidates.get(0).get("content");
-            List<Map<String, Object>> parts = (List<Map<String, Object>>) resContent.get("parts");
-            return (String) parts.get(0).get("text");
+            String text = extractText(response);
+            if (text == null || text.isBlank()) {
+                log.error("Google AI 응답에 본문이 없음: {}", response);
+                throw new RuntimeException("AI가 답변을 만들지 못했습니다. 잠시 후 다시 시도해주세요.");
+            }
+            return text.strip();
 
         } catch (WebClientResponseException e) {
             log.error("Google AI Studio API 호출 실패 [{}]: {}", e.getStatusCode(), e.getResponseBodyAsString());
-            throw new RuntimeException("AI 서비스 오류가 발생했습니다.");
+            String reason = switch (e.getStatusCode().value()) {
+                case 400 -> "AI API 키 또는 요청 형식을 확인해주세요.";
+                case 403 -> e.getResponseBodyAsString().contains("denied access")
+                        ? "Google이 이 프로젝트의 Gemini API 사용을 차단했습니다. 다른 프로젝트에서 API 키를 발급해주세요."
+                        : "AI API 키에 권한이 없습니다. 키와 프로젝트 설정을 확인해주세요.";
+                case 404 -> "AI 모델(" + model + ")을 찾을 수 없습니다.";
+                case 429 -> "AI 사용량 한도를 초과했습니다. 잠시 후 다시 시도해주세요.";
+                default -> "AI 서비스 오류가 발생했습니다.";
+            };
+            throw new RuntimeException(reason);
+        } catch (RuntimeException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("Google AI Studio API 호출 실패: {}", e.getMessage());
+            log.error("Google AI Studio API 호출 실패", e);
             throw new RuntimeException("AI 서비스 오류가 발생했습니다.");
         }
+    }
+
+    /** candidates[0].content.parts 중 생각(thought) 파트를 제외한 text를 모두 이어붙임 */
+    @SuppressWarnings("unchecked")
+    private String extractText(Map<String, Object> response) {
+        List<Map<String, Object>> candidates = (List<Map<String, Object>>) response.get("candidates");
+        if (candidates == null || candidates.isEmpty()) return null;
+        Map<String, Object> resContent = (Map<String, Object>) candidates.get(0).get("content");
+        if (resContent == null) return null;
+        List<Map<String, Object>> parts = (List<Map<String, Object>>) resContent.get("parts");
+        if (parts == null) return null;
+        StringBuilder sb = new StringBuilder();
+        for (Map<String, Object> p : parts) {
+            if (Boolean.TRUE.equals(p.get("thought"))) continue;
+            Object t = p.get("text");
+            if (t != null) sb.append(t);
+        }
+        return sb.toString();
     }
 }

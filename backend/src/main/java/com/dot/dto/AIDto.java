@@ -3,6 +3,8 @@ package com.dot.dto;
 import lombok.Getter;
 import lombok.Builder;
 
+import java.util.List;
+
 public class AIDto {
 
     @Getter
@@ -14,7 +16,7 @@ public class AIDto {
     @Getter
     @Builder
     public static class TryResponse {
-        private String suggestion;
+        private List<String> suggestions;
     }
 
     @Getter

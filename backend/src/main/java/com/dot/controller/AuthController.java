@@ -8,6 +8,8 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -25,6 +27,15 @@ public class AuthController {
                 .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
 
         return ResponseEntity.ok(UserResponse.from(user));
+    }
+
+    // 계정 삭제 — User 삭제 시 회고/KPT 항목까지 cascade로 함께 삭제됨 (GitHub 파일은 그대로 둠)
+    @DeleteMapping("/me")
+    public ResponseEntity<Void> deleteMe(@AuthenticationPrincipal Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+        userRepository.delete(user);
+        return ResponseEntity.noContent().build();
     }
 
     @Getter
@@ -46,7 +57,7 @@ public class AuthController {
                     .profileImage(user.getProfileImage())
                     .provider(user.getProvider().name())
                     .githubRepo(user.getGithubRepo())
-                    .githubConnected(user.getGithubToken() != null && user.getGithubRepo() != null)
+                    .githubConnected(StringUtils.hasText(user.getGithubToken()) && StringUtils.hasText(user.getGithubRepo()))
                     .build();
         }
     }

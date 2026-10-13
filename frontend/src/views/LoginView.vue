@@ -53,7 +53,7 @@ const backendUrl = import.meta.env.VITE_BACKEND_URL || ''
 
 .login-card {
   background: #fff;
-  border-radius: 24px;
+  border-radius: 12px;
   padding: 40px 36px;
   width: 100%;
   max-width: 400px;
@@ -114,7 +114,7 @@ const backendUrl = import.meta.env.VITE_BACKEND_URL || ''
   justify-content: center;
   gap: 10px;
   padding: 14px;
-  border-radius: 12px;
+  border-radius: 8px;
   font-size: 0.95rem;
   font-weight: 600;
   text-decoration: none;

@@ -299,7 +299,7 @@ onMounted(loadAll)
 }
 .stat-card {
   background: #fff;
-  border-radius: 14px;
+  border-radius: 10px;
   padding: 16px;
   text-align: center;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
@@ -310,7 +310,7 @@ onMounted(loadAll)
 
 .card {
   background: #fff;
-  border-radius: 16px;
+  border-radius: 10px;
   padding: 20px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }

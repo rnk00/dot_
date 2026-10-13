@@ -12,6 +12,11 @@
 
     <div v-else-if="pageLoading" class="blocked-msg">불러오는 중...</div>
 
+    <!-- 14일 지난 날짜에 회고가 없음: 새로 작성 불가 -->
+    <div v-else-if="isReadOnly && !retrospectId" class="blocked-msg">
+      작성 기간(14일)이 지난 날짜라 회고를 작성할 수 없습니다.
+    </div>
+
     <div v-else class="retro-body">
       <!-- 만족도 -->
       <div class="card">
@@ -53,28 +58,19 @@
             <input
               v-if="!isReadOnly"
               class="item-input"
-              :class="{ saving: isTemp(item) }"
+              :class="{ saving: isTemp(item) && item.content.trim() }"
               :value="item.content"
+              :placeholder="t.placeholder"
+              :ref="el => focusIfPending(el, item._uid)"
               @input="onItemInput(t.key, item, $event.target.value)"
+              @blur="onItemBlur(t.key, item)"
             />
             <span v-else class="item-text">{{ item.content }}</span>
             <button v-if="!isReadOnly" class="item-del" :disabled="isTemp(item)" @click="removeItem(t.key, item)">×</button>
           </div>
-
-          <div v-if="draft[t.key] !== null" class="kpt-item">
-            <span class="item-num">{{ t.badge }}{{ lists[t.key].length + 1 }}</span>
-            <input
-              ref="draftInputs"
-              class="item-input"
-              :value="draft[t.key]"
-              :placeholder="t.placeholder"
-              @input="onDraftInput(t.key, $event.target.value)"
-              @blur="onDraftBlur(t.key)"
-            />
-          </div>
         </div>
 
-        <button v-if="!isReadOnly" class="btn-add-item" :disabled="lists[t.key].length >= 20" @click="openDraft(t.key)">
+        <button v-if="!isReadOnly" class="btn-add-item" :disabled="lists[t.key].length >= 20" @click="addBlankItem(t.key)">
           + 추가
         </button>
 
@@ -83,10 +79,15 @@
           <button class="btn-ai" @click="suggestTry" :disabled="aiLoading">
             <Icon name="sparkle" :size="15" /> {{ aiLoading ? '생성 중...' : 'AI 추천 받기' }}
           </button>
-          <div v-if="aiSuggestion" class="ai-box">
-            <p class="ai-box-label">AI 추천</p>
-            <p class="ai-box-text">{{ aiSuggestion }}</p>
-            <button class="btn-apply" @click="addAiSuggestion" :disabled="lists.tryItems.length >= 20">추가</button>
+          <div v-if="aiSuggestions.length" class="ai-box">
+            <div class="ai-box-head">
+              <p class="ai-box-label">AI 추천</p>
+              <button class="btn-apply-all" @click="addAllAiSuggestions" :disabled="saveState === 'saving'">모두 추가</button>
+            </div>
+            <div v-for="s in aiSuggestions" :key="s" class="ai-suggestion">
+              <span class="ai-suggestion-text">{{ s }}</span>
+              <button class="btn-apply" @click="addAiSuggestion(s)" :disabled="saveState === 'saving'">+ 추가</button>
+            </div>
           </div>
         </template>
       </div>
@@ -138,6 +139,7 @@ import { aiApi } from '@/api/ai'
 import { githubApi } from '@/api/github'
 import { useAuthStore } from '@/stores/auth'
 import Icon from '@/components/Icon.vue'
+import { modal } from '@/composables/useModal'
 import { calendarCache } from '@/utils/calendarCache'
 
 const router = useRouter()
@@ -157,18 +159,17 @@ const retrospectId = ref(null)
 const isGithubSynced = ref(false)
 const score = ref(3)
 const lists = reactive({ keep: [], problem: [], tryItems: [] })
-const draft = reactive({ keep: null, problem: null, tryItems: null })
 
 const saveState = ref('saved') // 'saved' | 'unsaved' | 'saving'
 let pending = 0
 
 const aiLoading = ref(false)
-const aiSuggestion = ref('')
+const aiSuggestions = ref([])
 const githubLoading = ref(false)
 const githubNeedSetup = ref(false)
 const guide = reactive({ show: false, title: '', content: '', loading: false })
 const itemTimers = {}
-const draftTimers = {}
+const pendingFocusUid = ref(null)
 
 const today = new Date()
 today.setHours(0, 0, 0, 0)
@@ -208,7 +209,7 @@ async function trackSave(promise) {
     return res
   } catch (e) {
     pending = Math.max(0, pending - 1)
-    alert(e.response?.data?.message || '저장에 실패했습니다.')
+    modal.error(e.response?.data?.message || '저장에 실패했습니다.', { title: '저장 실패' })
     saveState.value = 'unsaved'
     throw e
   }
@@ -262,10 +263,7 @@ function resetState() {
   lists.keep = []
   lists.problem = []
   lists.tryItems = []
-  draft.keep = null
-  draft.problem = null
-  draft.tryItems = null
-  aiSuggestion.value = ''
+  aiSuggestions.value = []
   githubNeedSetup.value = false
 }
 
@@ -292,23 +290,51 @@ async function changeScore(n) {
   } catch { /* handled in trackSave */ }
 }
 
+function focusIfPending(el, uid) {
+  if (el && pendingFocusUid.value === uid) {
+    pendingFocusUid.value = null
+    el.focus()
+  }
+}
+
 function onItemInput(typeKey, item, value) {
   item.content = value
   saveState.value = pending > 0 ? 'saving' : 'unsaved'
   clearTimeout(itemTimers[item._uid])
-  itemTimers[item._uid] = setTimeout(async () => {
-    const trimmed = item.content.trim()
-    if (!trimmed) return
+  itemTimers[item._uid] = setTimeout(() => commitItem(typeKey, item), 1000)
+}
+
+function onItemBlur(typeKey, item) {
+  if (item.id != null) return // 이미 확정된 항목은 디바운스가 알아서 처리
+  clearTimeout(itemTimers[item._uid])
+  if (!item.content.trim()) {
+    // 아무것도 안 쓰고 벗어난 빈 새 항목은 저장 없이 제거
+    lists[typeKey] = lists[typeKey].filter(i => i !== item)
+  } else {
+    commitItem(typeKey, item)
+  }
+}
+
+// 새 항목(id 없음)이든 기존 항목이든 같은 <input> 요소를 그대로 쓰면서 저장만 처리 —
+// 화면 요소가 안 바뀌니 커서/포커스가 저장 전후로 끊기지 않음
+async function commitItem(typeKey, item) {
+  const trimmed = item.content.trim()
+  if (!trimmed) return // 빈 값은 저장하지 않음
+  try {
+    let data;
     if (item.id == null) {
-      // 아직 서버에 생성 확정이 안 된(임시) 항목 — 확정될 때까지 짧게 재시도
-      itemTimers[item._uid] = setTimeout(() => onItemInput(typeKey, item, item.content), 300)
-      return
+      const type = TYPES.find(t => t.key === typeKey).apiType
+      data = await trackSave(retrospectApi.addItem(route.params.date, type, trimmed))
+      const serverItem = (data[typeKey] || []).at(-1) // 방금 추가되어 맨 뒤에 붙은 항목
+      if (serverItem) {
+        item.id = serverItem.id
+        if (item.content.trim() === trimmed) item.content = serverItem.content
+      }
+    } else {
+      data = await trackSave(retrospectApi.updateItem(route.params.date, item.id, trimmed))
     }
-    try {
-      const data = await trackSave(retrospectApi.updateItem(route.params.date, item.id, trimmed))
-      applyResponse(data, { mutated: true })
-    } catch { /* handled */ }
-  }, 1000)
+    applyResponse(data, { mutated: true })
+  } catch { /* handled */ }
 }
 
 async function removeItem(typeKey, item) {
@@ -325,55 +351,14 @@ async function removeItem(typeKey, item) {
   }
 }
 
-function openDraft(typeKey) {
+function addBlankItem(typeKey) {
   if (lists[typeKey].length >= 20) {
-    alert('최대 20개까지 작성 가능합니다.')
+    modal.alert('최대 20개까지 작성 가능합니다.')
     return
   }
-  if (draft[typeKey] === null) draft[typeKey] = ''
-}
-
-function onDraftInput(typeKey, value) {
-  draft[typeKey] = value
-  saveState.value = pending > 0 ? 'saving' : 'unsaved'
-  clearTimeout(draftTimers[typeKey])
-  draftTimers[typeKey] = setTimeout(() => commitDraft(typeKey), 1000)
-}
-
-function onDraftBlur(typeKey) {
-  clearTimeout(draftTimers[typeKey])
-  commitDraft(typeKey)
-}
-
-async function commitDraft(typeKey) {
-  const content = (draft[typeKey] || '').trim()
-  if (!content) return
-  if (lists[typeKey].length >= 20) {
-    alert('최대 20개까지 작성 가능합니다.')
-    draft[typeKey] = null
-    return
-  }
-  // 요청이 나가는 즉시 draft를 비워서, 응답 오기 전에 blur/재debounce로
-  // 같은 내용이 중복 커밋되는 걸 막음 (실패하면 아래 catch에서 복구)
-  draft[typeKey] = null
-  // 응답 오기 전까지 화면이 비어 보이지 않도록, 임시 항목을 먼저 낙관적으로 표시.
-  // id는 아직 없지만 _uid는 있어서 확정된 후에도 같은 엘리먼트로 유지됨(포커스 안 끊김)
-  const tempItem = { id: null, content, _uid: nextUid() }
-  lists[typeKey] = [...lists[typeKey], tempItem]
-  const type = TYPES.find(t => t.key === typeKey).apiType
-  try {
-    const data = await trackSave(retrospectApi.addItem(route.params.date, type, tempItem.content))
-    const serverItem = (data[typeKey] || []).at(-1) // 방금 추가되어 맨 뒤에 붙은 항목
-    if (serverItem) {
-      // 같은 객체를 그대로 갱신(= 같은 _uid) — 그 사이 사용자가 더 입력했으면 로컬 content를 우선
-      tempItem.id = serverItem.id
-      if (tempItem.content === content) tempItem.content = serverItem.content
-    }
-    applyResponse(data, { mutated: true }) // 나머지(점수/다른 타입/동기화상태)까지 최신화, 이 항목은 위에서 이미 확정돼 병합 시 그대로 재사용됨
-  } catch {
-    lists[typeKey] = lists[typeKey].filter(i => i !== tempItem)
-    draft[typeKey] = content
-  }
+  const item = { id: null, content: '', _uid: nextUid() }
+  lists[typeKey] = [...lists[typeKey], item]
+  pendingFocusUid.value = item._uid
 }
 
 let dragState = null
@@ -391,37 +376,58 @@ async function onDrop(typeKey, targetIndex) {
 
   const type = TYPES.find(t => t.key === typeKey).apiType
   try {
-    const data = await trackSave(retrospectApi.reorderItems(route.params.date, type, arr.map(i => i.id)))
+    const orderedIds = arr.filter(i => i.id != null).map(i => i.id)
+    const data = await trackSave(retrospectApi.reorderItems(route.params.date, type, orderedIds))
     applyResponse(data, { mutated: true })
   } catch { /* handled */ }
 }
 
 async function deleteRetro() {
-  if (!confirm('회고를 삭제할까요?')) return
-  await retrospectApi.delete(retrospectId.value)
-  router.push('/calendar')
+  const ok = await modal.confirm('작성한 Keep · Problem · Try가 모두 삭제됩니다.', {
+    title: '회고를 삭제할까요?',
+    type: 'danger',
+    confirmText: '삭제',
+  })
+  if (!ok) return
+  try {
+    await retrospectApi.delete(retrospectId.value)
+    router.push('/calendar')
+  } catch (e) {
+    modal.error(e.response?.data?.message || '회고 삭제에 실패했습니다.')
+  }
 }
 
 async function suggestTry() {
-  const keepText = lists.keep.map(i => i.content).join('\n')
-  const problemText = lists.problem.map(i => i.content).join('\n')
-  if (!keepText && !problemText) return alert('Keep 또는 Problem을 먼저 작성해주세요.')
+  const keepText = lists.keep.map(i => i.content.trim()).filter(Boolean).join('\n')
+  const problemText = lists.problem.map(i => i.content.trim()).filter(Boolean).join('\n')
+  if (!keepText && !problemText) return modal.alert('Keep 또는 Problem을 먼저 작성해주세요.')
   aiLoading.value = true
-  aiSuggestion.value = ''
+  aiSuggestions.value = []
   try {
     const res = await aiApi.suggestTry(keepText, problemText)
-    aiSuggestion.value = res.suggestion
-  } catch { alert('AI 서비스 오류가 발생했습니다.') }
+    if (!res?.suggestions?.length) throw new Error()
+    aiSuggestions.value = res.suggestions
+  } catch (e) {
+    modal.error(e.response?.data?.message || 'AI 서비스 오류가 발생했습니다.', { title: 'AI 추천 실패' })
+  }
   finally { aiLoading.value = false }
 }
 
-async function addAiSuggestion() {
-  if (!aiSuggestion.value || lists.tryItems.length >= 20) return
+// 추천 하나를 Try 항목으로 추가하고 목록에서 뺌
+async function addAiSuggestion(text) {
+  if (lists.tryItems.length >= 20) return modal.alert('최대 20개까지 작성 가능합니다.')
   try {
-    const data = await trackSave(retrospectApi.addItem(route.params.date, 'TRY', aiSuggestion.value))
+    const data = await trackSave(retrospectApi.addItem(route.params.date, 'TRY', text))
     applyResponse(data, { mutated: true })
-    aiSuggestion.value = ''
+    aiSuggestions.value = aiSuggestions.value.filter(s => s !== text)
   } catch { /* handled */ }
+}
+
+async function addAllAiSuggestions() {
+  for (const text of [...aiSuggestions.value]) {
+    if (lists.tryItems.length >= 20) return modal.alert('최대 20개까지 작성 가능합니다.')
+    await addAiSuggestion(text)
+  }
 }
 
 async function pushToGithub() {
@@ -430,10 +436,9 @@ async function pushToGithub() {
   try {
     await githubApi.push(retrospectId.value)
     isGithubSynced.value = true
-    alert('GitHub에 성공적으로 업로드되었습니다.')
+    modal.success('GitHub에 업로드되었습니다.', { title: '업로드 완료' })
   } catch (e) {
-    const msg = e.response?.data?.message || 'GitHub 업로드에 실패했습니다.'
-    alert(msg)
+    modal.error(e.response?.data?.message || 'GitHub 업로드에 실패했습니다.', { title: '업로드 실패' })
   } finally {
     githubLoading.value = false
   }
@@ -494,7 +499,7 @@ watch(() => route.params.date, loadRetro)
 
 .card {
   background: #fff;
-  border-radius: 16px;
+  border-radius: 10px;
   padding: 20px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
@@ -511,7 +516,7 @@ watch(() => route.params.date, loadRetro)
 .score-btn {
   width: 44px;
   height: 44px;
-  border-radius: 10px;
+  border-radius: 8px;
   border: 2px solid #e2e8f0;
   background: #f8fafc;
   font-weight: 700;
@@ -525,10 +530,10 @@ watch(() => route.params.date, loadRetro)
 .score-btn:disabled { cursor: not-allowed; opacity: 0.7; }
 .score-emoji { font-size: 1.5rem; margin-left: 4px; }
 
-.kpt-card { border-left: 4px solid transparent; }
-.keep-card { border-left-color: #10b981; }
-.problem-card { border-left-color: #f59e0b; }
-.tryItems-card { border-left-color: #6366f1; }
+.kpt-card { border: 1.5px solid transparent; }
+.keep-card { border-color: #10b981; }
+.problem-card { border-color: #f59e0b; }
+.tryItems-card { border-color: #6366f1; }
 
 .kpt-header {
   display: flex;
@@ -633,7 +638,7 @@ watch(() => route.params.date, loadRetro)
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
   color: #fff;
   border: none;
-  border-radius: 10px;
+  border-radius: 8px;
   font-weight: 600;
   font-size: 0.875rem;
   cursor: pointer;
@@ -645,23 +650,34 @@ watch(() => route.params.date, loadRetro)
   margin-top: 12px;
   background: #f5f3ff;
   border: 1px solid #ddd6fe;
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 14px;
 }
-.ai-box-label { font-size: 0.75rem; font-weight: 700; color: #7c3aed; margin-bottom: 6px; }
-.ai-box-text { font-size: 0.875rem; line-height: 1.7; white-space: pre-wrap; color: #374151; }
-.btn-apply {
-  margin-top: 10px;
-  padding: 7px 14px;
-  background: #7c3aed;
-  color: #fff;
-  border: none;
+.ai-box-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.ai-box-label { font-size: 0.75rem; font-weight: 700; color: #7c3aed; }
+.ai-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  background: #fff;
+  border: 1px solid #ede9fe;
   border-radius: 6px;
-  font-size: 0.8rem;
+}
+.ai-suggestion + .ai-suggestion { margin-top: 6px; }
+.ai-suggestion-text { flex: 1; font-size: 0.875rem; line-height: 1.5; color: #374151; }
+.btn-apply, .btn-apply-all {
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
 }
-.btn-apply:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-apply { background: #7c3aed; color: #fff; border: none; }
+.btn-apply-all { background: none; color: #7c3aed; border: 1px solid #c4b5fd; }
+.btn-apply:disabled, .btn-apply-all:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .action-row { display: flex; align-items: center; gap: 10px; }
 
@@ -670,7 +686,7 @@ watch(() => route.params.date, loadRetro)
   background: #6366f1;
   color: #fff;
   border: none;
-  border-radius: 12px;
+  border-radius: 8px;
   font-weight: 700;
   font-size: 1rem;
   cursor: pointer;
@@ -693,7 +709,7 @@ watch(() => route.params.date, loadRetro)
   background: #24292e;
   color: #fff;
   border: none;
-  border-radius: 12px;
+  border-radius: 8px;
   font-weight: 700;
   font-size: 0.875rem;
   cursor: pointer;
@@ -733,7 +749,7 @@ watch(() => route.params.date, loadRetro)
 
 .modal {
   background: #fff;
-  border-radius: 20px;
+  border-radius: 12px;
   width: 100%;
   max-width: 520px;
   max-height: 75vh;

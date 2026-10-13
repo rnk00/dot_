@@ -23,7 +23,7 @@
             v-for="day in daysInMonth"
             :key="day"
             class="day-cell"
-            :class="{ today: isToday(day), 'has-data': getDayData(day), future: isFutureDay(day) }"
+            :class="{ today: isToday(day), 'has-data': getDayData(day), future: isFutureDay(day), locked: isLockedDay(day) }"
             :style="getCellStyle(day)"
             @click="goToDate(day)"
           >
@@ -171,8 +171,19 @@ function isFutureDay(day) {
   return cellDate > todayStart
 }
 
+// 14일보다 지난 날짜는 새로 작성할 수 없으므로, 회고가 없는 날은 들어가지 못하게 막음
+// (이미 작성된 회고는 읽기 전용으로 볼 수 있음)
+const WRITABLE_DAYS = 14
+
+function isLockedDay(day) {
+  if (getDayData(day)) return false
+  const cellDate = new Date(currentYear.value, currentMonth.value - 1, day)
+  const cutoff = new Date(today.getFullYear(), today.getMonth(), today.getDate() - WRITABLE_DAYS)
+  return cellDate < cutoff
+}
+
 function goToDate(day) {
-  if (isFutureDay(day)) return
+  if (isFutureDay(day) || isLockedDay(day)) return
   const date = `${currentYear.value}-${String(currentMonth.value).padStart(2,'0')}-${String(day).padStart(2,'0')}`
   router.push(`/retrospect/${date}`)
 }
@@ -249,7 +260,7 @@ onMounted(loadCalendar)
 .calendar-section {
   position: relative;
   background: #fff;
-  border-radius: 16px;
+  border-radius: 10px;
   padding: 24px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
@@ -261,7 +272,7 @@ onMounted(loadCalendar)
   align-items: center;
   justify-content: center;
   background: rgba(255,255,255,0.75);
-  border-radius: 16px;
+  border-radius: 10px;
   font-size: 0.875rem;
   font-weight: 600;
   color: #6366f1;
@@ -318,7 +329,7 @@ onMounted(loadCalendar)
 
 .day-cell {
   aspect-ratio: 1;
-  border-radius: 10px;
+  border-radius: 6px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -338,8 +349,8 @@ onMounted(loadCalendar)
 
 .day-cell.empty { background: transparent; cursor: default; }
 
-.day-cell.future { cursor: not-allowed; opacity: 0.4; }
-.day-cell.future:hover { transform: none; box-shadow: none; border-color: transparent; }
+.day-cell.future, .day-cell.locked { cursor: not-allowed; opacity: 0.4; }
+.day-cell.future:hover, .day-cell.locked:hover { transform: none; box-shadow: none; border-color: transparent; }
 
 .day-cell.today {
   border-color: #6366f1;
@@ -376,7 +387,7 @@ onMounted(loadCalendar)
   background: #6366f1;
   color: #fff;
   border: none;
-  border-radius: 10px;
+  border-radius: 8px;
   font-weight: 600;
   font-size: 0.9rem;
   cursor: pointer;
@@ -389,7 +400,7 @@ onMounted(loadCalendar)
 
 .sidebar-card {
   background: #fff;
-  border-radius: 16px;
+  border-radius: 10px;
   padding: 20px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
@@ -414,7 +425,7 @@ onMounted(loadCalendar)
   text-align: center;
   padding: 10px 4px;
   background: #f8fafc;
-  border-radius: 10px;
+  border-radius: 8px;
 }
 .stat-value { font-size: 1.3rem; font-weight: 800; color: #6366f1; }
 .stat-label { font-size: 0.7rem; color: #94a3b8; margin-top: 2px; }

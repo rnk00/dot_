@@ -109,7 +109,6 @@ function logout() {
 
 .content {
   flex: 1;
-  overflow-y: auto;
   padding-bottom: 64px;
 }
 

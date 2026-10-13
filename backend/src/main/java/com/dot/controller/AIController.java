@@ -7,6 +7,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/ai")
 @RequiredArgsConstructor
@@ -19,8 +21,8 @@ public class AIController {
     public ResponseEntity<AIDto.TryResponse> suggestTry(
             @AuthenticationPrincipal Long userId,
             @RequestBody AIDto.TryRequest request) {
-        String suggestion = aiService.suggestTry(request.getKeep(), request.getProblem());
-        return ResponseEntity.ok(AIDto.TryResponse.builder().suggestion(suggestion).build());
+        List<String> suggestions = aiService.suggestTry(request.getKeep(), request.getProblem());
+        return ResponseEntity.ok(AIDto.TryResponse.builder().suggestions(suggestions).build());
     }
 
     // 작성 가이드
